@@ -1,0 +1,11 @@
+# Data
+*.csv
+*.txt
+
+# Swap files
+*.swp
+
+# Python package junk
+*.pyc
+
+.cache
