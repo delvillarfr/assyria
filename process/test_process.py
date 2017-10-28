@@ -110,7 +110,7 @@ def test_same_filtered_oldid_directional_with_id_table():
                           38,
                           39])
     processor = process.Process('directional')
-    uuid_fdvom = processor.fetch_df_id()
+    uuid_fdvom = processor.fetch_df_id_equiv()
     np.testing.assert_array_equal(uuid_jhwi, uuid_fdvom['id_old'].values)
 
 
@@ -145,7 +145,7 @@ def test_same_filtered_oldid_non_directional_with_id_table():
                           38,
                           39])
     processor = process.Process('non_directional')
-    uuid_fdvom = processor.fetch_df_id()
+    uuid_fdvom = processor.fetch_df_id_equiv()
     np.testing.assert_array_equal(uuid_jhwi, uuid_fdvom['id_old'].values)
 
 
@@ -166,6 +166,26 @@ def test_merge_gets_only_filtered_data_directional():
                         .reset_index(drop=True)
                )
     pd.testing.assert_frame_equal(df_merged, df_other)
+
+
+
+def test_id_jhwi_matches_directional():
+    """ id's from jhwi come from line 62 (directional) """
+    processor = process.Process('directional')
+    df_mine = processor.fetch_df_id_equiv()
+    df_mine = (df_mine[['id_jhwi', 'id_old']].sort_values('id_jhwi')
+                                             .reset_index(drop=True)
+              )
+
+    df_jhwi = pd.read_csv(process.root
+                          + process.process
+                          + "id_comb_dir_jhwi.csv")
+    df_jhwi = (df_jhwi.rename(columns = {'id': 'id_jhwi',
+                                         'oldid': 'id_old'})
+                      .sort_values('id_jhwi')
+              )
+    pd.testing.assert_frame_equal(df_mine, df_jhwi)
+
 
 
 def test_same_trade_data_directional():
@@ -230,41 +250,144 @@ def test_same_trade_data_non_directional():
     pd.testing.assert_frame_equal(df_mine, df_jhwi)
 
 
-def test_that_coordinates_match():
-    pass
+def test_that_coordinates_match_directional():
+    processor = process.Process('directional')
+    df_mine = processor.fetch_df_coordinates()
+
+    df_mine['id_jhwi'] = df_mine['id_jhwi'].astype(int)
+    df_mine = (df_mine.drop('id', axis=1)
+                      .sort_values('id_jhwi')
+                      .rename(columns = {'id_jhwi': 'id'})
+                      .reset_index(drop=True)
+              )
+    df_jhwi = pd.read_csv(process.root_jhwi
+                          + 'estimation_directional/'
+                          + 'coordinates.csv'
+                         )
+    df_jhwi = df_jhwi[['id', 'long_x', 'lat_y', 'cert', 'validity']]
+    df_jhwi = (df_jhwi.sort_values('id')
+                      .reset_index(drop=True)
+              )
+
+    pd.testing.assert_frame_equal(df_mine, df_jhwi)
 
 
-#def jhwi_for_constraints(direct, dyn):
-#    df_jhwi = pd.read_csv(process.root_jhwi
-#                          + 'estimation_'
-#                          + direct + '/'
-#                          + 'constraints_'
-#                          + dyn
-#                          + '.csv'
-#                         )
-#    #df_jhwi = df_jhwi.drop('name', axis=1)
-#    return df_jhwi
-#
-#
-#def test_same_constraints_directional_dynamic():
-#    df_jhwi = jhwi_for_constraints('directional', 'dynamic')
-#    df_mine = process.update_id_cstr(True, True, id_used = 'id_jhwi')
-#
-#    df_mine = df_mine.drop('certainty', axis=1)
-#
-#    print(df_mine)
-#    print(df_jhwi)
-#
-#    pd.testing.assert_frame_equal(df_mine, df_jhwi)
-#
-#
-#def test_same_constraints_directional_static():
-#    df_jhwi = jhwi_for_constraints('directional', 'static')
-#    df_mine = process.update_id_cstr(True, False, id_used = 'id_jhwi')
-#
-#    df_mine = df_mine.drop('certainty', axis=1)
-#
-#    print(df_mine)
-#    print(df_jhwi)
-#
-#    pd.testing.assert_frame_equal(df_mine, df_jhwi)
+def test_that_coordinates_match_non_directional():
+    processor = process.Process('non_directional')
+    df_mine = processor.fetch_df_coordinates()
+
+    df_mine['id_jhwi'] = df_mine['id_jhwi'].astype(int)
+    df_mine = (df_mine.drop('id', axis=1)
+                      .sort_values('id_jhwi')
+                      .rename(columns = {'id_jhwi': 'id'})
+                      .reset_index(drop=True)
+              )
+    df_jhwi = pd.read_csv(process.root_jhwi
+                          + 'estimation_nondirectional/'
+                          + 'coordinates.csv'
+                         )
+    df_jhwi = df_jhwi[['id', 'long_x', 'lat_y', 'cert', 'validity']]
+    df_jhwi = (df_jhwi.sort_values('id')
+                      .reset_index(drop=True)
+              )
+
+    pd.testing.assert_frame_equal(df_mine, df_jhwi)
+    
+    
+
+def jhwi_for_constraints(direct, dyn):
+    df_jhwi = pd.read_csv(process.root_jhwi
+                          + 'estimation_'
+                          + direct + '/'
+                          + 'constraints_'
+                          + dyn
+                          + '.csv'
+                         )
+    df_jhwi = df_jhwi.drop('id', axis=1)
+    return df_jhwi
+
+
+def test_same_constraints_directional_dynamic():
+    processor = process.Process('directional')
+    df_jhwi = jhwi_for_constraints('directional', 'dynamic')
+
+    df_mine = processor.fetch_df_constr('dynamic', id_used = 'id_jhwi')
+
+    #Get name-id table
+    id_name = processor.df_city_name
+    id_name['id'] = processor.create_id(id_name['city_name'])
+
+    df_mine = (df_mine.merge(id_name, how='left', on='id')
+                      .drop(['id', 'certainty'], axis=1)
+                      .rename(columns = {'city_name': 'name'})
+              )
+    df_mine = df_mine[["name",
+                       "ub_lambda",
+                       "lb_lambda",
+                       "ub_varphi",
+                       "lb_varphi"]]
+
+    pd.testing.assert_frame_equal(df_mine, df_jhwi)
+
+
+def test_same_constraints_directional_static():
+    processor = process.Process('directional')
+    df_jhwi = jhwi_for_constraints('directional', 'static')
+
+    df_mine = processor.fetch_df_constr('static', id_used = 'id_jhwi')
+
+    id_table = processor.fetch_df_id()
+    df_mine = (df_mine.merge(id_table, how='left', on='id')
+                      .drop(['id', 'certainty'], axis=1)
+                      .rename(columns = {'city_name': 'name'})
+              )
+    df_mine = df_mine[["name",
+                       "ub_lambda",
+                       "lb_lambda",
+                       "ub_varphi",
+                       "lb_varphi"]]
+
+    pd.testing.assert_frame_equal(df_mine, df_jhwi)
+
+
+def test_same_constraints_nondirectional_dynamic():
+    processor = process.Process('non_directional')
+    df_jhwi = jhwi_for_constraints('nondirectional', 'dynamic')
+
+    df_mine = processor.fetch_df_constr('dynamic', id_used = 'id_jhwi')
+
+    #Get name-id table
+    id_name = processor.df_city_name
+    id_name['id'] = processor.create_id(id_name['city_name'])
+
+    df_mine = (df_mine.merge(id_name, how='left', on='id')
+                      .drop(['id', 'certainty'], axis=1)
+                      .rename(columns = {'city_name': 'name'})
+              )
+    df_mine = df_mine[["name",
+                       "ub_lambda",
+                       "lb_lambda",
+                       "ub_varphi",
+                       "lb_varphi"]]
+
+    pd.testing.assert_frame_equal(df_mine, df_jhwi)
+
+
+def test_same_constraints_nondirectional_static():
+    processor = process.Process('non_directional')
+    df_jhwi = jhwi_for_constraints('nondirectional', 'static')
+
+    df_mine = processor.fetch_df_constr('static', id_used = 'id_jhwi')
+
+    id_table = processor.fetch_df_id()
+    df_mine = (df_mine.merge(id_table, how='left', on='id')
+                      .drop(['id', 'certainty'], axis=1)
+                      .rename(columns = {'city_name': 'name'})
+              )
+    df_mine = df_mine[["name",
+                       "ub_lambda",
+                       "lb_lambda",
+                       "ub_varphi",
+                       "lb_varphi"]]
+
+    pd.testing.assert_frame_equal(df_mine, df_jhwi)

@@ -12,7 +12,7 @@ import sys
 
 
 
-# 0. configuration
+# Configuration
 
 
 config = configparser.ConfigParser()
@@ -57,12 +57,14 @@ class Process(object):
         self.df_constr_format = pd.read_csv(root + raw_constr_format)
         self.df_city_name = pd.read_csv(root + raw_city_name, header = None)
         self.df_city_name = self.df_city_name.rename(columns = {0: 'city_name'})
-        
+
+        self.id_path = root + process + 'id.csv'        
 
         if build_type == 'directional':
             self.coordinates_path = root + process + 'coordinates_dir.csv'
-            self.main_path = root + process + 'main_dir.csv'
-            self.id_path = root + process + 'id_equivalence_dir.csv'
+            self.iticount_path = root + process + 'iticount_dir.csv'
+            self.id_equiv_path = root + process + 'id_equivalence_dir.csv'
+            self.constr_path = root + process + 'constraints_dir_'
 
             # Methods as attributes
             self.filter = self.filter_positive_imports
@@ -70,9 +72,10 @@ class Process(object):
 
 
         elif build_type == 'non_directional':
-            self.id_path = root + process + 'id_equivalence_nondir.csv'
-            self.main_path = root + process + 'main_nondir.csv'
             self.coordinates_path = root + process + 'coordinates_nondir.csv'
+            self.iticount_path = root + process + 'iticount_nondir.csv'
+            self.id_equiv_path = root + process + 'id_equivalence_nondir.csv'
+            self.constr_path = root + process + 'constraints_nondir_'
 
             # Methods as attributes
             self.filter = self.filter_positive_activity
@@ -81,6 +84,45 @@ class Process(object):
         else:
             raise ValueError("Initialize class with 'directional' or "
                              + "'non_directional'")
+
+
+    def create_id(self, names):
+        """
+        names: pd.Series. A series of city names.
+        
+        The id to use will be the first two letters of the city followed by
+        their place in the list. e.g. Kanes is the first of two cities starting
+        with "Ka". Its id is "ka01".
+
+        Assumes that the city_names dataset is our universe.
+        Returns a pd.Series with the created id's.
+        """
+        names = names.to_frame('name')
+        names['id_head'] = (names['name'].str[:2]
+                                         .str.lower()
+                           )
+        names['id_tail'] = 0
+        for n in names['id_head'].unique():
+            size = len( names.loc[ names['id_head'] == n, : ] )
+            names.loc[ names['id_head'] == n, 'id_tail' ] = np.arange(1, size+1)
+
+        ## Now concatenate
+        names['id_tail'] = names['id_tail'].astype(str)
+        names['id'] = names['id_head'].str.cat(names['id_tail'], sep='0')
+
+        return names['id']
+
+    
+    def fetch_df_id(self):
+        """
+        Genrates id's for our universe, which is assumed to be the cities in
+        the city_name dataset.
+        """
+        names = self.df_city_name.copy()
+        names['id'] = self.create_id(names['city_name'])
+        names['id_old'] = names.index + 1
+
+        return names
 
 
     def filter_positive_imports(self):
@@ -131,15 +173,11 @@ class Process(object):
         return iticount['anccityid2'].unique()
 
 
-    def create_id(self, ids_left):
+    def convert_id(self, ids_left):
         """
         ids_left: list-like. It is the id of cities to consider.
 
-        Generates ID conversion table for all cities in ids_left.
-
-        The id to use will be the first two letters of the city followed by their
-        place in the list. e.g. Kanes is the first of two cities starting with
-        "Ka". Its id is "ka01".
+        Returns ID conversion table for all cities in ids_left.
         """
         # Create old id
         city_name = self.df_city_name.copy()
@@ -149,47 +187,36 @@ class Process(object):
         city_name = city_name.loc[ city_name['id_old'].isin(ids_left) ]
 
         # Get Joonhwi's id (it's not alphabetically ordered...)
-        coordinates = self.df_coordinates.merge(city_name,
-                                                how='left',
-                                                left_on='name',
-                                                right_on='city_name'
-                                               )
-        coordinates = (coordinates.loc[ coordinates['id_old'].isin(ids_left) ]
-                                  .reset_index(False)
+        df = self.df_coordinates.merge(city_name,
+                                       how='left',
+                                       left_on='name',
+                                       right_on='city_name'
+                                      )
+        df = (df.loc[ df['id_old'].isin(ids_left) ]
+                                  .reset_index(drop = True)
                       )
-        coordinates['id_jhwi'] = coordinates.index + 1
-        coordinates['id_old'] = coordinates['id_old'].astype(int)
-        main = coordinates[['city_name',
-                            'id_old',
-                            'id_jhwi']].sort_values('id_old')
-
-        # Create new id.
-        main['id_head'] = (main['city_name'].str[:2]
-                                             .str.lower()
-                           )
-        main['id_tail'] = 0
-        for n in main['id_head'].unique():
-            size = len( main.loc[ main['id_head'] == n, : ] )
-            main.loc[ main['id_head'] == n, 'id_tail' ] = np.arange(1, size+1)
-
-        ## Now concatenate
-        main['id_tail'] = main['id_tail'].astype(str)
-        main['id'] = main['id_head'].str.cat(main['id_tail'], sep='0')
-
+        df['id_jhwi'] = df.index + 1
+        df['id_old'] = df['id_old'].astype(int)
+        df = df[['city_name', 'id_old', 'id_jhwi']].sort_values('id_old')
+        
+        df = df.merge(self.fetch_df_id()[['id', 'city_name']],
+                      how='left',
+                      on='city_name')
+        
         cols = [ 'city_name',
                  'id_old',
                  'id_jhwi',
                  'id' ]
 
-        return main[cols]
+        return df[cols]
 
 
-    def fetch_df_id(self):
+    def fetch_df_id_equiv(self):
         """
         Generates an id's equivalence table for reference.
         """
         ids_left = self.filter()
-        result = self.create_id(ids_left)
+        result = self.convert_id(ids_left)
 
         return result
 
@@ -198,7 +225,7 @@ class Process(object):
         """
         Selects trade data according to the filtering function and adds ids.
         """
-        df_id = self.fetch_df_id()
+        df_id = self.fetch_df_id_equiv()
         df_id = df_id[['id_old', 'id_jhwi', 'id']]
         
         iticount = self.df_iticount.copy()
@@ -286,11 +313,11 @@ class Process(object):
                 'N_i',
                 'N_j',
                 's_ij']
-        if jhwi == 1:
+        if jhwi == True:
             cols += ['id_jhwi_i', 'id_jhwi_j']
 
         df = df[cols]
-        df['id'] = df['id_i'].str.cat(df['id_j'])
+        #df['id'] = df['id_i'].str.cat(df['id_j'])
 
         return df
 
@@ -299,10 +326,9 @@ class Process(object):
         '''
         Returns the coordinates table with the appropriate id.
         '''
-        df_id = self.fetch_df_id()
+        df_id = self.fetch_df_id_equiv()
 
-        coordinates = self.df_coordinates.copy()
-        coordinates = coordinates.drop('id', axis=1)
+        coordinates = self.df_coordinates.drop('id', axis=1)
         coordinates = coordinates.merge(df_id,
                                         how='left',
                                         left_on='name',
@@ -310,7 +336,9 @@ class Process(object):
                                        )
         coordinates = coordinates.loc[ pd.notnull(coordinates['id']) ]
 
+        # Add id_jhwi for testing
         coordinates = coordinates[['id',
+                                   'id_jhwi',
                                    'long_x',
                                    'lat_y',
                                    'cert',
@@ -319,56 +347,58 @@ class Process(object):
         return coordinates
 
 
-    def update_id_cstr(self, dtype, id_used = 'id'):
+    def fetch_df_constr(self, dtype, id_used = 'id'):
         """
         dtype: str. One of "static" or "dynamic".
         id_used: str. Specifies which id to replace with. Used for testing.
 
         Updates the ids in the constraints datasets
         """
-        df_id = self.fetch_df_id()
-
         if dtype == "dynamic":
-            cstr = self.df_constr_dyn
+            constr = self.df_constr_dyn.copy()
         elif dtype == "static":
-            cstr = self.df_constr_stat
+            constr = self.df_constr_stat.copy()
         else:
             raise ValueError("Must be called with dtype equal to one of "
                              + "'static' or 'dynamic'")
 
-        coordinates = self.df_coordinates.drop('id', axis=1)
-        id_equiv = coordinates.merge(df_id,
-                                     how='left',
-                                     left_on='name',
-                                     right_on='city_name'
-                                    )
-        print(id_equiv)
+        if id_used == 'id':
+            df_equiv = self.fetch_df_id()
+            id_old = df_equiv['id_old'].values
+            id_new = df_equiv[id_used].values
 
-        #sys.exit()
-        id_old = df_id['id_old'].values
-        id_new = df_id[id_used].values
+        else:
+            df_equiv = self.fetch_df_id_equiv()
+            id_old = df_equiv['id_old'].values
+            id_new = df_equiv[id_used].values
 
         variables = ['upper_y', 'lower_y', 'upper_x', 'lower_x']
-        cstr[variables] = (cstr[variables].replace(0, np.nan)
-                                          .replace(id_old, id_new)
-                          )
-        #cstr = (cstr[['id_city', 'certainty'] + variables]
-        cstr = (cstr
-                .rename(columns = {'id_city': 'id',
-                                   'upper_y': 'ub_lambda',
-                                   'lower_y': 'lb_lambda',
-                                   'upper_x': 'ub_varphi',
-                                   'lower_x': 'lb_varphi'}
-                       )
-               )
+        constr[variables] = (constr[variables].replace(0, np.nan)
+                                              .replace(id_old, id_new)
+                            )
+        constr = constr.merge(self.fetch_df_id(),
+                              how='left',
+                              left_on='anccity',
+                              right_on='city_name'
+                             )
+        constr = (constr[['id', 'certainty'] + variables]
+                        .rename(columns = {'upper_y': 'ub_lambda',
+                                           'lower_y': 'lb_lambda',
+                                           'upper_x': 'ub_varphi',
+                                           'lower_x': 'lb_varphi'}
+                               )
+                 )
 
-        return cstr
+        return constr
 
 
-    def refresh_all():
-        fetch_df_id()
-        fetch_df_id(False)
-        fetch_df_iticount()
-        fetch_df_iticount(False)
-        fetch_coordinates()
-        fetch_coordinates(False)
+    def refresh_all(self):
+        self.fetch_df_id().to_csv(self.id_path, index=False)
+        self.fetch_df_id_equiv().to_csv(self.id_equiv_path, index=False)
+        self.fetch_df_iticount(jhwi=False).to_csv(self.iticount_path,
+                                                  index=False)
+        self.fetch_df_coordinates().to_csv(self.coordinates_path, index=False)
+        self.fetch_df_constr('static').to_csv(self.constr_path
+                                              + 'stat.csv', index=False)
+        self.fetch_df_constr('dynamic').to_csv(self.constr_path
+                                               + 'dyn.csv', index=False)
