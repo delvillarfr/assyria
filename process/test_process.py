@@ -3,19 +3,17 @@ import numpy as np
 import pytest
 import process
 
-@pytest.fixture
-def iticount_data():
-    return pd.read_csv(process.root + process.raw_iticount)
-
 
 def test_iticount_data_has_city_pairs_as_uuid():
     """ Check that city pairs are a unique identifier. """
-    test_data = iticount_data()[['anccityid1', 'anccityid2']]
+
+    processor = process.Process('directional')
+    test_data = processor.df_iticount[['anccityid1', 'anccityid2']]
     no_dups = test_data.drop_duplicates()
     pd.testing.assert_frame_equal(test_data, no_dups)
 
 
-def test_same_filtered_oldid_directional():
+def test_same_filtered_oldid_directional_with_filter():
     """ oldid taken from line 54 (directional) """
     uuid_jhwi = np.array([3,
                           5,
@@ -43,12 +41,13 @@ def test_same_filtered_oldid_directional():
                           37,
                           38,
                           39])
-    uuid_fdvom = process.fetch_id_df()
-    np.testing.assert_array_equal(uuid_jhwi, uuid_fdvom['id_old'].values)
+    processor = process.Process('directional')
+    uuid_fdvom = processor.filter()
+    np.testing.assert_array_equal(uuid_jhwi, uuid_fdvom)
 
 
-def test_same_filtered_oldid_non_directional():
-    """ oldid taken from line 54 (directional) """
+def test_same_filtered_oldid_non_directional_with_filter():
+    """ oldid taken from line 63 (nondirectional) """
     uuid_jhwi = np.array([1,
                           3,
                           5,
@@ -77,18 +76,86 @@ def test_same_filtered_oldid_non_directional():
                           37,
                           38,
                           39])
-    uuid_fdvom = process.fetch_id_df(False)
-    print(uuid_fdvom['id_old'].values)
+    processor = process.Process('non_directional')
+    uuid_fdvom = processor.filter()
+    np.testing.assert_array_equal(uuid_jhwi, uuid_fdvom)
+
+
+def test_same_filtered_oldid_directional_with_id_table():
+    """ oldid taken from line 54 (directional) """
+    uuid_jhwi = np.array([3,
+                          5,
+                          6,
+                          7,
+                          8,
+                          9,
+                          10,
+                          11,
+                          15,
+                          16,
+                          18,
+                          19,
+                          20,
+                          22,
+                          23,
+                          24,
+                          25,
+                          26,
+                          29,
+                          31,
+                          32,
+                          33,
+                          36,
+                          37,
+                          38,
+                          39])
+    processor = process.Process('directional')
+    uuid_fdvom = processor.fetch_df_id()
+    np.testing.assert_array_equal(uuid_jhwi, uuid_fdvom['id_old'].values)
+
+
+def test_same_filtered_oldid_non_directional_with_id_table():
+    """ oldid taken from line 63 (nondirectional) """
+    uuid_jhwi = np.array([1,
+                          3,
+                          5,
+                          6,
+                          7,
+                          8,
+                          9,
+                          10,
+                          11,
+                          15,
+                          16,
+                          18,
+                          19,
+                          20,
+                          22,
+                          23,
+                          24,
+                          25,
+                          26,
+                          29,
+                          31,
+                          32,
+                          33,
+                          34,
+                          36,
+                          37,
+                          38,
+                          39])
+    processor = process.Process('non_directional')
+    uuid_fdvom = processor.fetch_df_id()
     np.testing.assert_array_equal(uuid_jhwi, uuid_fdvom['id_old'].values)
 
 
 def test_merge_gets_only_filtered_data_directional():
-    df_merged = process.select_trade_data()
+    processor = process.Process('directional')
+    df_merged = processor.select_trade_data()
     df_merged = df_merged[['id_old_i', 'id_old_j']]
 
-
-    df_other = iticount_data()
-    filtered_obs = process.filter_positive_imports(df_other)
+    df_other = processor.df_iticount
+    filtered_obs = processor.filter()
     df_other = df_other.rename(columns = {'anccityid1': 'id_old_i',
                                           'anccityid2': 'id_old_j'}
                               )
@@ -102,7 +169,8 @@ def test_merge_gets_only_filtered_data_directional():
 
 
 def test_same_trade_data_directional():
-    df_mine = process.fetch_trade_data()
+    processor = process.Process('directional')
+    df_mine = processor.fetch_df_iticount()
     cols = ['id_jhwi_i',
             'id_jhwi_j',
             'cert_i',
@@ -111,7 +179,7 @@ def test_same_trade_data_directional():
             'N_j',
             's_ij']
     df_mine = (df_mine[cols].sort_values(['id_jhwi_j', 'id_jhwi_i'])
-                           .reset_index(drop=True)
+                            .reset_index(drop=True)
               )
     df_jhwi = pd.read_csv(process.root_jhwi
                           + 'estimation_directional/'
@@ -132,7 +200,8 @@ def test_same_trade_data_directional():
 
 
 def test_same_trade_data_non_directional():
-    df_mine = process.fetch_trade_data(directional=False)
+    processor = process.Process('non_directional')
+    df_mine = processor.fetch_df_iticount()
     cols = ['id_jhwi_i',
             'id_jhwi_j',
             'cert_i',
