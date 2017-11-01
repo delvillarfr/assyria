@@ -13,7 +13,8 @@ You should have a similar directory structure:
           process/
                   process.py
                   test_process.py
-	  raw/
+	      raw/
+
 
 Where all raw datasets are stored in the raw/ directory.
 
