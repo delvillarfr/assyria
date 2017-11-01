@@ -18,6 +18,7 @@ You should have a similar directory structure:
 Where all raw datasets are stored in the raw/ directory.
 
 Sample keys.ini:
+
      [paths]
      root = /path/to/parent/
      root_jhwi = /path/to/jhwi/
