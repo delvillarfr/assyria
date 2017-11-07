@@ -9,7 +9,7 @@ You should have a similar directory structure:
           rawdata/
      parent/
           keys.ini
-          estimation/
+          estimate/
           process/
                   process.py
                   test_process.py

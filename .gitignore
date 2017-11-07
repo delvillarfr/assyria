@@ -7,6 +7,7 @@
 
 # Python package junk
 *.pyc
+__pycache__
 
 .cache
 

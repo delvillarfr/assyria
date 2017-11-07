@@ -43,11 +43,11 @@ class Process(object):
 
     def __init__(self, build_type): 
         '''
-        build_type: str. One of "directional" and "non-directional".
+        build_type: str. One of "directional" or "non-directional".
 
-        Stores all filenames of datasets that can be produced.
         Loads all raw datasets. 
-        Saves the filering and variable-building methods as attributes.
+        Stores all filenames of datasets that can be produced.
+        Saves the filtering and variable-building methods as attributes.
         '''
         # Load raw datasets
         self.df_iticount = pd.read_csv(root + raw_iticount)
@@ -304,6 +304,10 @@ class Process(object):
         df = self.select_trade_data()
         df = self.build_vars(df)
 
+        df = (df.sort_values(['id_jhwi_j', 'id_jhwi_i'])
+                .reset_index(drop=True)
+             )
+
         # Select columns
         cols = ['cert_i',
                 'cert_j',
@@ -317,7 +321,6 @@ class Process(object):
             cols += ['id_jhwi_i', 'id_jhwi_j']
 
         df = df[cols]
-        #df['id'] = df['id_i'].str.cat(df['id_j'])
 
         return df
 

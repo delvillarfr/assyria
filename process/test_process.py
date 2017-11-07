@@ -198,15 +198,12 @@ def test_same_trade_data_directional():
             'N_ij',
             'N_j',
             's_ij']
-    df_mine = (df_mine[cols].sort_values(['id_jhwi_j', 'id_jhwi_i'])
-                            .reset_index(drop=True)
-              )
+    df_mine = df_mine[cols]
     df_jhwi = pd.read_csv(process.root_jhwi
                           + 'estimation_directional/'
                           + 'ppml_estimation_directional_data.csv'
                          )
-    df_jhwi = (df_jhwi.sort_values(['j_id', 'i_id'])
-                      .rename(columns = {'i_cert': 'cert_i',
+    df_jhwi = (df_jhwi.rename(columns = {'i_cert': 'cert_i',
                                          'j_cert': 'cert_j',
                                          'N_j_sum': 'N_j',
                                          'i_id': 'id_jhwi_i',
@@ -229,15 +226,12 @@ def test_same_trade_data_non_directional():
             'N_ij',
             'N_j',
             's_ij']
-    df_mine = (df_mine[cols].sort_values(['id_jhwi_j', 'id_jhwi_i'])
-                           .reset_index(drop=True)
-              )
+    df_mine = df_mine[cols]
     df_jhwi = pd.read_csv(process.root_jhwi
                           + 'estimation_nondirectional/'
                           + 'ppml_estimation_nondirectional_data.csv'
                          )
-    df_jhwi = (df_jhwi.sort_values(['j_id', 'i_id'])
-                      .rename(columns = {'i_cert': 'cert_i',
+    df_jhwi = (df_jhwi.rename(columns = {'i_cert': 'cert_i',
                                          'j_cert': 'cert_j',
                                          'N_j_sum': 'N_j',
                                          'i_id': 'id_jhwi_i',
