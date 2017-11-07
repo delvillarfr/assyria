@@ -4,7 +4,7 @@ estimation.
 '''
 
 import os
-import configparser
+import ConfigParser
 import pandas as pd
 import numpy as np
 
@@ -15,21 +15,21 @@ import sys
 # Configuration
 
 
-config = configparser.ConfigParser()
+config = ConfigParser.ConfigParser()
 
 ## file keys.ini should be in process.py parent directory.
 config.read(os.path.dirname(os.path.dirname(__file__)) + '/keys.ini')
 
 ## Paths
-root = config['paths']['root']
-root_jhwi = config['paths']['root_jhwi']
-raw_iticount = config['paths']['raw_iticount']
-raw_city_name = config['paths']['raw_city_name']
-raw_coord = config['paths']['raw_coord']
-raw_constr_dynamic = config['paths']['raw_constr_dynamic']
-raw_constr_static = config['paths']['raw_constr_static']
-raw_constr_format = config['paths']['raw_constr_format']
-process = config['paths']['process']
+root = config.get('paths', 'root')
+root_jhwi = config.get('paths', 'root_jhwi')
+raw_iticount = config.get('paths', 'raw_iticount')
+raw_city_name = config.get('paths', 'raw_city_name')
+raw_coord = config.get('paths', 'raw_coord')
+raw_constr_dynamic = config.get('paths', 'raw_constr_dynamic')
+raw_constr_static = config.get('paths', 'raw_constr_static')
+raw_constr_format = config.get('paths', 'raw_constr_format')
+process = config.get('paths', 'process')
 
 
 

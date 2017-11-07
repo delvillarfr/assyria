@@ -3,7 +3,7 @@ Model Parameter Estimation
 '''
 
 import os
-import configparser
+import ConfigParser
 
 
 import pandas as pd
@@ -18,15 +18,15 @@ import sys
 # Configuration
 
 
-config = configparser.ConfigParser()
+config = ConfigParser.ConfigParser()
 
 ## file keys.ini should be in process.py parent directory.
 config.read(os.path.dirname(os.path.dirname(__file__)) + '/keys.ini')
 
 ## Paths
-root = config['paths']['root']
-root_jhwi = config['paths']['root_jhwi']
-process = config['paths']['process']
+root = config.get('paths', 'root')
+root_jhwi = config.get('paths', 'root_jhwi')
+process = config.get('paths', 'process')
 
 
 
@@ -371,32 +371,49 @@ class Estimate(object):
         return (lb, ub)
 
 
-    def initial_cond(self):
+    def initial_cond(self, len_sim=None, perturb=None):
         '''
-        Returns initial condition
+        len_sim: int. Specifies the number of draws to take.
+        perturb: float. Specifies a percentage deviation from the default
+        initial value.
+
+        Returns default initial condition if perturb is not specified, and an
+        array of perturbed values of dimension (len_sim, numvars)
         '''
+        # Form default initial value
         zeta = [2.0]
         alphas = self.num_cities * [1.0]
         lats = self.df_unknown['lat_y'].tolist()
         longs = self.df_unknown['long_x'].tolist()
+        x0 = zeta + alphas + lats + longs
 
-        return zeta + alphas + lats + longs
+        # Perturb it
+        if perturb != None:
+            x0 = np.tile(x0, (len_sim, 1))
+            p = np.random.uniform(1-perturb, 1+perturb, size=(len_sim, 1))
+            x0 = x0*p
+
+        return x0
 
 
-
-    # Optimization wrapper
-    def solve(self, x0, constr):
+    def solve(self, x0, constraint_type='static'):
         '''
+        x0: list. It is the initial value.
+        constraint_type: str. One of 'static' or 'dynamic'.
         Returns a one-row dataframe with optimization information.
         '''
         # Set bounds
+        if constraint_type == 'static':
+            constr = self.replace_id_coord(self.df_constr_stat)
+        elif constraint_type == 'dynamic':
+            constr = self.replace_id_coord(self.df_constr_dyn)
+        else:
+            raise ValueError("Please specify the constraint type to be "
+                             + "'static' or 'dynamic'")
         bounds = self.get_bounds(constr)
 
         lb = bounds[0]
         ub = bounds[1]
-        print(len(ub))
-        print(len(lb))
-        print(len(x0))
 
         assert len(lb) == len(x0)
 
@@ -406,6 +423,19 @@ class Estimate(object):
                              lb=lb,
                              ub=ub )
 
+        # Add IPOPT options (some jhwi options were default)
+        option_specs = { 'hessian_approximation': 'limited-memory',
+                         'linear_solver': 'ma57',
+                         'limited_memory_max_history': 100,
+                         'limited_memory_max_skipping': 1,
+                         'mu_strategy': 'adaptive',
+                         'tol': 1e-8,
+                         'acceptable_tol': 1e-7,
+                         'acceptable_iter': 100,
+                         'max_iter': 40000 }
+        for option in option_specs.keys():
+            nlp.addOption(option, option_specs[option])
+
         (x, info) = nlp.solve(x0)
         
         # Set up variable names
@@ -413,7 +443,6 @@ class Estimate(object):
         lats = ['{0}_lat'.format(i) for i in self.df_unknown['id'].tolist()]
         longs = ['{0}_lng'.format(i) for i in self.df_unknown['id'].tolist()]
         headers = ['zeta'] + alphas + lats + longs
-        print(headers)
 
         df = pd.DataFrame(data = [x],
                           columns = headers)
@@ -424,6 +453,24 @@ class Estimate(object):
         return df
 
 
+    def gen_data(self, len_sim, perturb, rank=None):
+        '''
+        rank: in parallelized computing.
+        Returns simulation dataframe sorted by objective value
+        '''
+        # Get initial values
+        x0 = self.initial_cond(len_sim, perturb)
+
+        data = self.solve( x0[0, :].tolist() )
+        for i in range(1, len_sim):
+            i_val = x0[i, :].tolist()
+            data = data.append( self.solve(i_val) )
+        
+        if rank != None:
+            data['process'] = rank
+
+        # Sort
+        return data.sort_values('obj_val')
 
 # Now define optimization problem
 class Optimizer(Estimate):
@@ -439,4 +486,4 @@ class Optimizer(Estimate):
 
 
 #e = Estimate('directional')
-#e.solve(e.initial_cond(), e.replace_id_coord(e.df_constr_stat))
+#e.gen_data( 10000, 0.5 )
