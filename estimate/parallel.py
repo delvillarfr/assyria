@@ -18,7 +18,7 @@ size = comm.Get_size()
 estimator = estimate.Estimate('directional')
 
 ## Number of initial values to draw
-simulations = 5
+simulations = 2
 
 
 
@@ -39,5 +39,5 @@ else:
     solution = solution.reset_index(drop=True)
     print('And the solutions are...')
     print(solution)
-    
+
     solution.to_csv('/home/delvillar/assyria/fdv/estimate/par_estimation.csv')

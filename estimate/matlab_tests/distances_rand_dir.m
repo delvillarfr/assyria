@@ -65,13 +65,16 @@ lambda_known = lambda0(1:K);
 
 alpha0 = ones((K+L),1);
 
-lats = table2array(readtable('lats_test.csv', 'HeaderLines', 1));
-longs = table2array(readtable('longs_test.csv', 'HeaderLines', 1));
-disp(lats);
+lats = table2array(readtable('lats_rand_dir.csv', 'HeaderLines', 1));
+longs = table2array(readtable('longs_rand_dir.csv', 'HeaderLines', 1));
 
 %%% Initialize theta0
 la = lats(1, :)';
 lo = longs(1, :)';
+disp('lat is:');
+disp(la);
+disp('long is:');
+disp(lo);
 theta0 = [sigma0;tilde_delta0;varphi_known;lo;lambda_known;la;alpha0];
 dim_theta = size(theta0,1);
 
@@ -86,5 +89,7 @@ auxdata.index = index;
 auxdata.dim_theta = dim_theta;
 auxdata.data_selector = data_selector;
 
-results_sij = sij_getter(theta0, auxdata)
-writetable(array2table(results_sij(:,1)), 'sij_jhwi.csv')
+results = distance_getter(theta0, auxdata)
+disp(results)
+writetable(array2table(results(:,1)), 'distances_rand_dir.csv')
+%writetable(array2table(horzcat(auxdata.id_comb, results(:,1))), 'distances_fetched_jhwi.csv')

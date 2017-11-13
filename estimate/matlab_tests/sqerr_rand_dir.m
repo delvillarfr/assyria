@@ -65,10 +65,9 @@ lambda_known = lambda0(1:K);
 
 alpha0 = ones((K+L),1);
 
-lats = table2array(readtable('lats_test.csv', 'HeaderLines', 1));
-longs = table2array(readtable('longs_test.csv', 'HeaderLines', 1));
+lats = table2array(readtable('lats_rand_dir.csv', 'HeaderLines', 1));
+longs = table2array(readtable('longs_rand_dir.csv', 'HeaderLines', 1));
 disp(lats);
-
 
 results = ones(100,1);
 
@@ -95,5 +94,4 @@ for i = 1: 100
 	results(i) = sqerr_sum(theta0, auxdata)
 end
 
-writetable(array2table(results), 'sqerr_jhwi.csv')
-
+writetable(array2table(results), 'sqerr_rand_dir.csv')
