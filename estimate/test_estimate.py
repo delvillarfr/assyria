@@ -5,6 +5,8 @@ import estimate
 import pandas as pd
 import numpy as np
 
+pd.set_option('precision',15)
+accuracy = 8
 
 def test_iticount_imports_is_composed_solely_of_cities_in_coordinates():
     e = estimate.Estimate('directional')
@@ -56,7 +58,8 @@ def test_same_distances_with_haversine_approx_and_euclidean_dist():
     dist_jhwi = pd.read_csv('./matlab_tests/data/distances_sample.csv')
 
     np.testing.assert_array_almost_equal(dist_jhwi.values,
-                                         dist_mine.reshape((500,1)))
+                                         dist_mine.reshape((500,1)),
+                                         decimal=accuracy)
 
 
 def test_same_distances_with_haversine_approx_and_euclidean_dist_sq():
@@ -68,7 +71,8 @@ def test_same_distances_with_haversine_approx_and_euclidean_dist_sq():
     dist_jhwi = pd.read_csv('./matlab_tests/data/distances_sq_sample.csv')
 
     np.testing.assert_array_almost_equal(dist_jhwi.values,
-                                         dist_mine.reshape((500,1)))
+                                         dist_mine.reshape((500,1)),
+                                         decimal=accuracy)
 
 
 def test_coordinate_pairs_match_those_of_their_corresponding_iticount_entry_dir():
@@ -82,7 +86,6 @@ def test_coordinate_pairs_match_those_of_their_corresponding_iticount_entry_dir(
     e.df_unknown['long_x'] = longs
 
     coords = e.df_known.append(e.df_unknown)
-    print(coords)
 
     merged = e.df_iticount.copy()
     merged = merged.astype(np.float64, errors='ignore')
@@ -100,7 +103,9 @@ def test_coordinate_pairs_match_those_of_their_corresponding_iticount_entry_dir(
 
     for i in range(2):
         np.testing.assert_array_almost_equal(coords_estimate[i],
-                                             coords_merged[i])
+                                             coords_merged[i],
+                                             decimal=accuracy)
+
 
 
 def test_coordinate_pairs_match_those_of_their_corresponding_iticount_entry_nondir():
@@ -114,7 +119,6 @@ def test_coordinate_pairs_match_those_of_their_corresponding_iticount_entry_nond
     e.df_unknown['long_x'] = longs
 
     coords = e.df_known.append(e.df_unknown)
-    print(coords)
 
     merged = e.df_iticount.copy()
     merged = merged.astype(np.float64, errors='ignore')
@@ -132,7 +136,9 @@ def test_coordinate_pairs_match_those_of_their_corresponding_iticount_entry_nond
 
     for i in range(2):
         np.testing.assert_array_almost_equal(coords_estimate[i],
-                                             coords_merged[i])
+                                             coords_merged[i],
+                                             decimal=accuracy)
+
 
 
 def test_same_fetched_distances_dir():
@@ -148,7 +154,9 @@ def test_same_fetched_distances_dir():
     distances_mine = e.fetch_dist(lats, longs).reshape((650,1))
     distances_jhwi = pd.read_csv('./matlab_tests/data/distances_rand_dir.csv')
     np.testing.assert_array_almost_equal(distances_mine,
-                                         np.sqrt(distances_jhwi))
+                                         np.sqrt(distances_jhwi),
+                                         decimal=accuracy)
+
 
 
 def test_same_fetched_distances_nondir():
@@ -164,7 +172,9 @@ def test_same_fetched_distances_nondir():
     distances_mine = e.fetch_dist(lats, longs).reshape((756,1))
     distances_jhwi = pd.read_csv('./matlab_tests/data/distances_rand_nondir.csv')
     np.testing.assert_array_almost_equal(distances_mine,
-                                         np.sqrt(distances_jhwi))
+                                         np.sqrt(distances_jhwi),
+                                         decimal=accuracy)
+
 
 
 def test_same_s_ij_model_directional_dir():
@@ -181,7 +191,9 @@ def test_same_s_ij_model_directional_dir():
 
     sij_mine = e.s_ij_model(zeta, alpha, dists).reshape((650, 1))
     sij_jhwi = pd.read_csv('./matlab_tests/data/sij_rand_dir.csv')
-    np.testing.assert_array_almost_equal(sij_mine, sij_jhwi)
+    np.testing.assert_array_almost_equal(sij_mine,
+                                         sij_jhwi,
+                                         decimal=accuracy)
 
 
 def test_same_s_ij_model_directional_nondir():
@@ -198,7 +210,9 @@ def test_same_s_ij_model_directional_nondir():
 
     sij_mine = e.s_ij_model(zeta, alpha, dists).reshape((756, 1))
     sij_jhwi = pd.read_csv('./matlab_tests/data/sij_rand_nondir.csv')
-    np.testing.assert_array_almost_equal(sij_mine, sij_jhwi)
+    np.testing.assert_array_almost_equal(sij_mine,
+                                         sij_jhwi,
+                                         decimal=accuracy)
 
 
 def test_same_bounds_to_ipopt_dir_static():
@@ -209,9 +223,11 @@ def test_same_bounds_to_ipopt_dir_static():
     bounds_jhwi = bounds_jhwi.replace(np.inf, 1.0e20)
 
     np.testing.assert_array_almost_equal(np.array(bounds[0]),
-                                         bounds_jhwi['lb'].values.flatten())
+                                         bounds_jhwi['lb'].values.flatten(),
+                                         decimal=accuracy)
     np.testing.assert_array_almost_equal(np.array(bounds[1]),
-                                         bounds_jhwi['ub'].values.flatten())
+                                         bounds_jhwi['ub'].values.flatten(),
+                                         decimal=accuracy)
 
 
 def test_same_bounds_to_ipopt_nondir_static():
@@ -222,9 +238,11 @@ def test_same_bounds_to_ipopt_nondir_static():
     bounds_jhwi = bounds_jhwi.replace(np.inf, 1.0e20)
 
     np.testing.assert_array_almost_equal(np.array(bounds[0]),
-                                         bounds_jhwi['lb'].values.flatten())
+                                         bounds_jhwi['lb'].values.flatten(),
+                                         decimal=accuracy)
     np.testing.assert_array_almost_equal(np.array(bounds[1]),
-                                         bounds_jhwi['ub'].values.flatten())
+                                         bounds_jhwi['ub'].values.flatten(),
+                                         decimal=accuracy)
 
 
 def test_same_initial_condition_dir():
@@ -233,7 +251,9 @@ def test_same_initial_condition_dir():
     # zeta is one half sigma
     theta0_mine[0] = theta0_mine[0]/2
     theta0_jhwi = pd.read_csv('./matlab_tests/data/theta0_dir.csv')
-    np.testing.assert_array_almost_equal(theta0_mine, theta0_jhwi.values.flatten())
+    np.testing.assert_array_almost_equal(theta0_mine,
+                                         theta0_jhwi.values.flatten(),
+                                         decimal=accuracy)
 
 
 def test_same_initial_condition_nondir():
@@ -242,7 +262,9 @@ def test_same_initial_condition_nondir():
     # zeta is one half sigma
     theta0_mine[0] = theta0_mine[0]/2
     theta0_jhwi = pd.read_csv('./matlab_tests/data/theta0_nondir.csv')
-    np.testing.assert_array_almost_equal(theta0_mine, theta0_jhwi.values.flatten())
+    np.testing.assert_array_almost_equal(theta0_mine,
+                                         theta0_jhwi.values.flatten(),
+                                         decimal=accuracy)
 
 
 def test_same_sqerr_sum_dir():
@@ -260,7 +282,9 @@ def test_same_sqerr_sum_dir():
         sqerr_mine[i] = e.sqerr_sum(zeta + lng_guess + lat_guess + alpha)
 
     sqerr_jhwi = pd.read_csv('./matlab_tests/data/sqerr_rand_dir.csv').values
-    np.testing.assert_array_almost_equal(sqerr_mine, sqerr_jhwi)
+    np.testing.assert_array_almost_equal(sqerr_mine,
+                                         sqerr_jhwi,
+                                         decimal=accuracy)
 
 
 def test_same_sqerr_sum_nondir():
@@ -278,7 +302,9 @@ def test_same_sqerr_sum_nondir():
         sqerr_mine[i] = e.sqerr_sum(zeta + lng_guess + lat_guess + alpha)
 
     sqerr_jhwi = pd.read_csv('./matlab_tests/data/sqerr_rand_nondir.csv').values
-    np.testing.assert_array_almost_equal(sqerr_mine, sqerr_jhwi)
+    np.testing.assert_array_almost_equal(sqerr_mine,
+                                         sqerr_jhwi,
+                                         decimal=accuracy)
 
 
 def test_same_sqerr_sum_full_vars_dir():
@@ -306,7 +332,9 @@ def test_same_sqerr_sum_full_vars_dir():
                                    full_vars=True)
 
     sqerr_jhwi = pd.read_csv('./matlab_tests/data/sqerr_rand_dir.csv').values
-    np.testing.assert_array_almost_equal(sqerr_mine, sqerr_jhwi)
+    np.testing.assert_array_almost_equal(sqerr_mine,
+                                         sqerr_jhwi,
+                                         decimal=accuracy)
 
 
 def test_same_sqerr_sum_full_vars_nondir():
@@ -334,7 +362,9 @@ def test_same_sqerr_sum_full_vars_nondir():
                                    full_vars=True)
 
     sqerr_jhwi = pd.read_csv('./matlab_tests/data/sqerr_rand_nondir.csv').values
-    np.testing.assert_array_almost_equal(sqerr_mine, sqerr_jhwi)
+    np.testing.assert_array_almost_equal(sqerr_mine,
+                                         sqerr_jhwi,
+                                         decimal=accuracy)
 
 
 def test_same_gradients_at_initial_coords_dir():
@@ -348,7 +378,9 @@ def test_same_gradients_at_initial_coords_dir():
     # sigma is one half zeta
     grad_jhwi[0] = grad_jhwi[0]/2
 
-    np.testing.assert_array_almost_equal(grad_mine, grad_jhwi)
+    np.testing.assert_array_almost_equal(grad_mine,
+                                         grad_jhwi,
+                                         decimal=accuracy)
 
 
 def test_same_gradients_at_initial_coords_nondir():
@@ -362,7 +394,9 @@ def test_same_gradients_at_initial_coords_nondir():
     # sigma is one half zeta
     grad_jhwi[0] = grad_jhwi[0]/2
 
-    np.testing.assert_array_almost_equal(grad_mine, grad_jhwi)
+    np.testing.assert_array_almost_equal(grad_mine,
+                                         grad_jhwi,
+                                         decimal=accuracy)
 
 
 def test_many_inputs_grad_and_objective_dir():
@@ -380,8 +414,12 @@ def test_many_inputs_grad_and_objective_dir():
     obj_jhwi = pd.read_csv('./matlab_tests/data/inputs_objective_dir.csv').values
     grads_jhwi = pd.read_csv('./matlab_tests/data/inputs_gradients_dir.csv').values
     grads_jhwi[:, 0] = grads_jhwi[:, 0]/2
-    np.testing.assert_array_almost_equal(obj_mine, obj_jhwi)
-    np.testing.assert_array_almost_equal(grads_mine, grads_jhwi)
+    np.testing.assert_array_almost_equal(obj_mine,
+                                         obj_jhwi,
+                                         decimal=accuracy)
+    np.testing.assert_array_almost_equal(grads_mine,
+                                         grads_jhwi,
+                                         decimal=accuracy)
 
 
 def test_many_inputs_grad_and_objective_nondir():
@@ -399,10 +437,39 @@ def test_many_inputs_grad_and_objective_nondir():
     obj_jhwi = pd.read_csv('./matlab_tests/data/inputs_objective_nondir.csv').values
     grads_jhwi = pd.read_csv('./matlab_tests/data/inputs_gradients_nondir.csv').values
     grads_jhwi[:, 0] = grads_jhwi[:, 0]/2
-    np.testing.assert_array_almost_equal(obj_mine, obj_jhwi)
-    np.testing.assert_array_almost_equal(grads_mine, grads_jhwi)
+
+    np.testing.assert_array_almost_equal(obj_mine,
+                                         obj_jhwi,
+                                         decimal=accuracy)
+    np.testing.assert_array_almost_equal(grads_mine,
+                                         grads_jhwi,
+                                         decimal=accuracy)
 
 
+def test_same_objective_at_optimal_point():
+    e = estimate.Estimate('directional')
+    theta = pd.read_csv('./matlab_tests/data/theta_firststage_plot.csv',
+                        header=None)
+    theta = theta.values.flatten()
+    # sigma to zeta
+    theta[0] = theta[0]*2
+
+    obj_mine = e.sqerr_sum(theta, full_vars=True)
+    grad_mine = e.grad_full_vars(theta)
+    grad_mine[0] = grad_mine[0]*2
+
+    vals_jhwi = pd.read_csv('./matlab_tests/data/result_obj_grad_dir.csv')
+    obj_jhwi = vals_jhwi.iat[0, 0]
+    grad_jhwi = vals_jhwi.drop('obj', axis=1).values.flatten()
+
+    df = pd.DataFrame([grad_mine, grad_jhwi])
+    df['objective_fn'] = [obj_mine, obj_jhwi]
+    df.to_csv('results_at_optimum.csv', index=False)
+    print(df['objective_fn'])
+
+    np.testing.assert_array_almost_equal(df.iloc[0, :].values,
+                                         df.iloc[1, :].values,
+                                         decimal=accuracy)
 
 
 def gen_test_inputs(l=1000, full_vars=False, directional=True):

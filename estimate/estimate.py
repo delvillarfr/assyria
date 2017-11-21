@@ -36,16 +36,16 @@ class Estimate(object):
         '''
         build_type: str. One of "directional" or "non-directional".
         lat: 2-element tuple. Contains assumed lower and upper latitude bounds
-        lng: 2-element tuple. Contains assumed lower and upper longitude bounds 
+        lng: 2-element tuple. Contains assumed lower and upper longitude bounds
 
         Loads all processed datasets.
-        
-            Sets coordinates in degrees. 
+
+            Sets coordinates in degrees.
         Sets known and unknown coordinates datasets as separate attributes.
-        
+
         Adds selected vars from trade data with known coordinates as
         attribute. This will be the main dataset to work with further down.
-        
+
         Saves the gradient of the objective function as attribute, to avoid
         calling autograd multiple times.
         '''
@@ -94,9 +94,6 @@ class Estimate(object):
             self.df_coordinates['cert'] == 3,
             ['id', 'long_x', 'lat_y']
         ]
-        ## Set dtype for coordinates
-        #for df in [self.df_known, self.df_unknown]:
-        #    df[['long_x', 'lat_y']] = df[['long_x', 'lat_y']].astype(np.float64)
 
         self.num_cities_known = len(self.df_known)
         self.num_cities_unknown = len(self.df_unknown)
@@ -125,6 +122,35 @@ class Estimate(object):
             return self.sqerr_sum(varlist, full_vars=True)
         self.grad_full_vars = grad(objective_full_vars)
 
+        # Save array index that views array of size len(self.df_coordinates)
+        # and selects off-diagonal elements. See self.tile_nodiag.
+        i = np.repeat(np.arange(1, self.num_cities), self.num_cities)
+        self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
+
+        # Save indices to unpack argument of objective and gradient
+        # There is a set of indices if we are using the full set of coordinates
+        # as arguments, or if we use only the only the unknown cities
+        # coordinates as arguments.
+        self.div_indices = {
+            True: {'long_unknown_s': 2 + self.num_cities_known,
+                   'long_s': 2,
+                   'long_e': 2 + self.num_cities,
+                   'lat_unknown_s': 2 + self.num_cities + self.num_cities_known,
+                   'lat_s': 2 + self.num_cities,
+                   'lat_e': 2 + 2*self.num_cities,
+                   'a_s': 2 + 2*self.num_cities},
+            False: {'long_s': 1,
+                    'long_e': 1 + self.num_cities_unknown,
+                    'lat_s': 1 + self.num_cities_unknown,
+                    'lat_e': 1 + 2*self.num_cities_unknown,
+                    'a_s': 1 + 2*self.num_cities_unknown,
+                    'a_e': 1 + 2*self.num_cities_unknown + self.num_cities}
+        }
+
+        # Save trade shares located in df_main
+        self.df_shares = self.df_iticount['s_ij'].values
+
+
 
     def haversine_approx(self, coord_i, coord_j):
         '''
@@ -133,10 +159,6 @@ class Estimate(object):
 
         Returns the approximation of the Haversine formula described in the
         estimation section of the paper.
-
-        https://stackoverflow.com/questions/17936587/in-numpy-find-euclidean-distance-between-each-pair-from-two-arrays
-        Note that np.hypot is faster than computing the pairwise distances
-        "manually".
         '''
         factor_out = 10000.0/90
         factor_in = np.cos(37.9 * np.pi / 180)
@@ -146,65 +168,23 @@ class Estimate(object):
 
         diff = np.column_stack((lat_diff, factor_in * lng_diff))
 
-        #diff[:, 1] = factor_in * diff[:, 1]
-
-        #return factor_out * np.hypot( diff[:, 0], factor_in * diff[:, 1],
-        #                             dtype=np.float64 )
         return factor_out * np.sqrt( np.sum(diff**2, axis=1) )
 
 
-    def fetch_dist_dep(self, lat_guess, lng_guess):
+
+    def tile_nodiag(self, arr):
         '''
-        DEPRECATED
-        lat_guess, long_guess: array-like.
+        arr: np.array. A 1-dim array of length self.num_cities.
 
-        Imputes the guesses to lost cities via merge.
-        
-        Returns np.array: the distances for city pairs in iticount data
-        '''
-        # Add coordinates of lost cities. No need to copy...
-        self.df_unknown['lat_y'] = lat_guess
-        self.df_unknown['long_x'] = lng_guess
+        Returns an array repeating arr the number of times given by
+        self.num_cities, but extracting value in index j on repetition j.
 
-        # Merge with main
-        main = self.df_main.copy()
-        for suf in ['_i', '_j']:
-            main = main.merge(self.df_unknown,
-                              how = 'left',
-                              left_on = 'id' + suf,
-                              right_on = 'id'
-                             )
-            main['lat_y' + suf] = main['lat_y' + suf].fillna(main['lat_y'])
-            main['long_x' + suf] = main['long_x' + suf].fillna(main['long_x'])
-            main = main.drop(['lat_y', 'long_x'], axis = 1)
-
-        main = main.drop(['id_x', 'id_y'], axis = 1)
-
-        # Get distances
-        return self.haversine_approx(main[['lat_y_i', 'long_x_i']].values,
-                                     main[['lat_y_j', 'long_x_j']].values)
-
-
-    def tile_nodiag(self, A):
-        '''
-        A: np.array.
-
-        Assumes A has all non-zero elements.
-
-        Returns an array repeating A the number of times given by len(A), but
-        extracting value in index j on repetition j.
-
-        example: If A = np.array([1, 2, 3]) then self.tile_nodiag(A) returns
+        example: If arr = np.array([1, 2, 3]) then self.tile_nodiag(arr) returns
         np.array([2, 3, 1, 3, 1, 2]).
         '''
-        mat_A = np.tile(A, (len(A), 1))
+        arr_tiled = np.tile(arr, self.num_cities)
 
-        # Fill matrix diagonal with 0
-        ## This is a workaround for np.fill_diagonal(mat_A, 0) which operates
-        ## in-place and is not supported by autograd.
-        mat_A = np.triu(mat_A, 1) + np.tril(mat_A, -1)
-
-        return mat_A[np.nonzero(mat_A)]
+        return arr_tiled[self.index_nodiag]
 
 
     def get_coordinate_pairs(self, lat_guess, lng_guess, full_vars=False):
@@ -229,6 +209,7 @@ class Estimate(object):
             np.repeat(lats, self.num_cities-1),
             np.repeat(longs, self.num_cities-1)
         ))
+        #assert len(lats) == len(longs)
         coord_i = np.column_stack((
             self.tile_nodiag(lats),
             self.tile_nodiag(longs)
@@ -267,28 +248,6 @@ class Estimate(object):
         return elems / denom
 
 
-    def get_dividing_indices(self, full_vars=False):
-        '''
-        Returns a dict with indices to extract latitudes and longitudes,
-        and alphas begin.
-        '''
-        if full_vars:
-            result = {'long_unknown_s': 2 + self.num_cities_known,
-                      'long_s': 2,
-                      'long_e': 2 + self.num_cities,
-                      'lat_unknown_s': 2 + self.num_cities + self.num_cities_known,
-                      'lat_s': 2 + self.num_cities,
-                      'lat_e': 2 + 2*self.num_cities,
-                      'a_s': 2 + 2*self.num_cities}
-        else:
-            result = {'long_s': 1,
-                      'long_e': 1 + self.num_cities_unknown,
-                      'lat_s': 1 + self.num_cities_unknown,
-                      'lat_e': 1 + 2*self.num_cities_unknown,
-                      'a_s': 1 + 2*self.num_cities_unknown}
-        return result
-
-
     def sqerr_sum(self, varlist, full_vars=False):
         '''
         varlist = np.array([zeta, alpha, lat_guess, lng_guess]).
@@ -299,21 +258,20 @@ class Estimate(object):
         # Unpack arguments
         zeta = varlist[0]
 
-        i = self.get_dividing_indices(full_vars)
+        i = self.div_indices[full_vars]
         lng_guess = varlist[i['long_s']: i['long_e']]
         lat_guess = varlist[i['lat_s']: i['lat_e']]
         alpha = varlist[i['a_s']:]
 
-        assert len(lat_guess) == len(lng_guess)
+        #assert len(lat_guess) == len(lng_guess)
 
-        s_ij_data = self.df_main['s_ij'].values
         s_ij_model = self.s_ij_model(zeta,
                                      alpha,
                                      self.fetch_dist(lat_guess,
                                                      lng_guess,
                                                      full_vars)
                                     )
-        diff = s_ij_data - s_ij_model
+        diff = self.df_shares - s_ij_model
         return np.dot(diff, diff)
 
 
@@ -384,7 +342,7 @@ class Estimate(object):
         lb[0] = 0.0
 
 
-        i = self.get_dividing_indices(full_vars)
+        i = self.div_indices[full_vars]
 
         dit = {'long':('varphi', 'long_x'), 'lat': ('lambda', 'lat_y')}
         if full_vars:
@@ -412,7 +370,7 @@ class Estimate(object):
         return (lb, ub)
 
 
-    def initial_cond(self, full_vars=False, len_sim=None, perturb=None):
+    def initial_cond(self, len_sim=None, perturb=None, full_vars=False) :
         '''
         len_sim: int. Specifies the number of draws to take.
         perturb: float. Specifies a percentage deviation from the default
@@ -440,10 +398,10 @@ class Estimate(object):
             p = np.random.uniform(1-perturb, 1+perturb, size=(len_sim, 1))
             x0 = x0*p
 
-        return np.array(x0)
+        return x0
 
 
-    def solve(self, x0, constraint_type='static'):
+    def solve(self, x0, constraint_type='static', full_vars=False):
         '''
         x0: list. It is the initial value.
         constraint_type: str. One of 'static' or 'dynamic'.
@@ -457,8 +415,10 @@ class Estimate(object):
         else:
             raise ValueError("Please specify the constraint type to be "
                              + "'static' or 'dynamic'")
-        bounds = self.get_bounds(constr)
+        bounds = self.get_bounds(constr, full_vars)
 
+        print(len(bounds))
+        print(len(x0))
         assert len(bounds[0]) == len(x0)
 
         nlp = ipopt.problem( n=len(x0),
@@ -476,7 +436,7 @@ class Estimate(object):
                          'tol': 1e-8,
                          'acceptable_tol': 1e-7,
                          'acceptable_iter': 100,
-                         'max_iter': 40000 }
+                         'max_iter': 25000 }
         for option in option_specs.keys():
             nlp.addOption(option, option_specs[option])
 
@@ -484,31 +444,41 @@ class Estimate(object):
 
         # Set up variable names
         alphas = ['{0}_a'.format(i) for i in self.df_coordinates['id'].tolist()]
-        lats = ['{0}_lat'.format(i) for i in self.df_unknown['id'].tolist()]
-        longs = ['{0}_lng'.format(i) for i in self.df_unknown['id'].tolist()]
-        headers = ['zeta'] + alphas + lats + longs
+        if full_vars:
+            longs = ['{0}_lng'.format(i) for i in self.df_coordinates['id'].tolist()]
+            lats = ['{0}_lat'.format(i) for i in self.df_coordinates['id'].tolist()]
+            headers = ['zeta', 'useless'] + longs + lats + alphas
+        else:
+            longs = ['{0}_lng'.format(i) for i in self.df_unknown['id'].tolist()]
+            lats = ['{0}_lat'.format(i) for i in self.df_unknown['id'].tolist()]
+            headers = ['zeta'] + longs + lats + alphas
 
         df = pd.DataFrame(data = [x],
                           columns = headers)
         df['obj_val'] = info['obj_val']
         df['status'] = info['status']
         df['status_msg'] = info['status_msg']
+        df['status_msg'] = df['status_msg'].str.replace(';', '')
+
+        #Add initial condition
+        for ival in range(len(x0)):
+            df['x0_'+str(ival)] = x0[ival]
 
         return df
 
 
-    def gen_data(self, len_sim, perturb, rank=None):
+    def gen_data(self, len_sim, perturb, rank=None, full_vars=False):
         '''
         rank: int. Process number in parallelized computing.
         Returns simulation dataframe sorted by objective value
         '''
         # Get initial values
-        x0 = self.initial_cond(len_sim, perturb)
+        x0 = self.initial_cond(len_sim, perturb, full_vars)
 
-        data = self.solve( x0[0, :].tolist() )
+        data = self.solve( x0[0, :], full_vars=full_vars )
         for i in range(1, len_sim):
-            i_val = x0[i, :].tolist()
-            data = data.append( self.solve(i_val) )
+            i_val = x0[i, :]
+            data = data.append( self.solve(i_val, full_vars=full_vars) )
 
         if rank != None:
             data['process'] = rank
@@ -517,6 +487,56 @@ class Estimate(object):
         return data.sort_values('obj_val')
 
 
+    def get_best_result(self, results):
+        '''
+        results: pd.DataFrame. It is the output of the parallelized execution.
+        returns the row with minimum objective function value.
+        '''
+        r = results.sort_values('obj_val')
+
+        # Discard results that are result in invalid numbers
+        r = r.loc[ r['status'] != -13, :]
+
+        return r.head(1)
+
+
+    def resolve(self, result):
+        '''
+        result: pd.DataFrame. Output of self.get_best_result
+
+        Recursively digs into the coordinates results if the maximum number of
+        iterations was reached. Otherwise it returns the best solution.
+        '''
+        if result['status'].iloc[0] == -1:
+            names = (['zeta']
+                + ['{0}_lng'.format(i) for i in self.df_unknown['id'].tolist()]
+                + ['{0}_lat'.format(i) for i in self.df_unknown['id'].tolist()]
+                + ['{0}_a'.format(i) for i in self.df_coordinates['id'].tolist()]
+                )
+            init_val = result[names].values.flatten()
+
+            return self.resolve(self.solve(init_val))
+
+        else:
+            return result
+
+
+    def input_to_jhwi(self, x):
+        '''
+        x: pd.DataFrame. arguments for my function.
+
+        Returns the initial value to evaluate the MATLAB objective function.
+        '''
+        x = x.values.flatten()
+
+        i = self.div_indices[False]
+        res = np.concatenate(([x[0]/2.0, 4],
+                              self.df_known['long_x'].values,
+                              x[i['long_s']: i['long_e']],
+                              self.df_known['lat_y'].values,
+                              x[i['lat_s']: i['lat_e']],
+                              x[i['a_s']: i['a_e'] + 1]))
+        pd.Series(res).to_csv('input_to_jhwi.csv', index=False)
 
 
 # Now define optimization problem
@@ -526,7 +546,7 @@ class Optimizer(Estimate):
         Estimate.__init__(self, build_type)
 
     def objective(self, varlist):
-        return -self.sqerr_sum(varlist)
+        return self.sqerr_sum(varlist)
 
     def gradient(self, varlist):
-        return -self.grad(varlist)
+        return self.grad(varlist)
