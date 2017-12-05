@@ -9,6 +9,7 @@ import ConfigParser
 import pandas as pd
 import autograd.numpy as np
 from autograd import grad
+from autograd import jacobian
 import ipopt
 
 import sys
@@ -18,15 +19,18 @@ import sys
 # Configuration
 
 
-config = ConfigParser.ConfigParser()
+if __name__ == "__main__":
+    # execute only if run as a script
+    config = ConfigParser.ConfigParser()
 
-## file keys.ini should be in process.py parent directory.
-config.read(os.path.dirname(os.path.dirname(__file__)) + '/keys.ini')
+    ## file keys.ini should be in process.py parent directory.
+    print(os.path.dirname(os.path.dirname(__file__)) + '/keys.ini')
+    config.read(os.path.dirname(os.path.dirname(__file__)) + '/keys.ini')
 
-## Paths
-root = config.get('paths', 'root')
-root_jhwi = config.get('paths', 'root_jhwi')
-process = config.get('paths', 'process')
+    ## Paths
+    root = config.get('paths', 'root')
+    root_jhwi = config.get('paths', 'root_jhwi')
+    process = config.get('paths', 'process')
 
 
 
@@ -111,16 +115,28 @@ class Estimate(object):
                            )
         self.df_main = self.df_main.drop(['id_x', 'id_y'], axis = 1)
 
-        # Save Gradient as attribute
+        # Automatic differentiation of objective and errors
+
+        ## Objective
+        ### Using only relevant vars
         def objective(varlist):
             ''' This is the formulation for autograd. '''
             return self.sqerr_sum(varlist)
         self.grad = grad(objective)
-
+        ### Using all vars
         def objective_full_vars(varlist):
             ''' This is the formulation for autograd. '''
             return self.sqerr_sum(varlist, full_vars=True)
         self.grad_full_vars = grad(objective_full_vars)
+
+        ## Errors
+        def error_autograd(v):
+            return self.get_errors(v)
+        self.jac_errors = jacobian(error_autograd)
+        ### Using all vars
+        def error_autograd_full_vars(v):
+            return self.get_errors(v, full_vars=True)
+        self.jac_errors_full_vars = jacobian(error_autograd_full_vars)
 
         # Save array index that views array of size len(self.df_coordinates)
         # and selects off-diagonal elements. See self.tile_nodiag.
@@ -138,7 +154,8 @@ class Estimate(object):
                    'lat_unknown_s': 2 + self.num_cities + self.num_cities_known,
                    'lat_s': 2 + self.num_cities,
                    'lat_e': 2 + 2*self.num_cities,
-                   'a_s': 2 + 2*self.num_cities},
+                   'a_s': 2 + 2*self.num_cities,
+                   'a_e': 2 + 3*self.num_cities},
             False: {'long_s': 1,
                     'long_e': 1 + self.num_cities_unknown,
                     'lat_s': 1 + self.num_cities_unknown,
@@ -149,7 +166,6 @@ class Estimate(object):
 
         # Save trade shares located in df_main
         self.df_shares = self.df_iticount['s_ij'].values
-
 
 
     def haversine_approx(self, coord_i, coord_j):
@@ -168,8 +184,10 @@ class Estimate(object):
 
         diff = np.column_stack((lat_diff, factor_in * lng_diff))
 
+        # Re-declare object dtype: numpy bug
+        # https://stackoverflow.com/questions/18833639/attributeerror-in-python-numpy-when-constructing-function-for-certain-values
+        #return factor_out * np.sqrt( np.float64(np.sum(diff**2, axis=1)) )
         return factor_out * np.sqrt( np.sum(diff**2, axis=1) )
-
 
 
     def tile_nodiag(self, arr):
@@ -248,12 +266,11 @@ class Estimate(object):
         return elems / denom
 
 
-    def sqerr_sum(self, varlist, full_vars=False):
+    def get_errors(self, varlist, full_vars=False):
         '''
         varlist = np.array([zeta, alpha, lat_guess, lng_guess]).
 
-        Returns the value of the objective function given the data and the
-        model trade shares.
+        Returns the difference of data and model trade shares.
         '''
         # Unpack arguments
         zeta = varlist[0]
@@ -271,8 +288,16 @@ class Estimate(object):
                                                      lng_guess,
                                                      full_vars)
                                     )
-        diff = self.df_shares - s_ij_model
-        return np.dot(diff, diff)
+        return self.df_shares - s_ij_model
+
+
+    def sqerr_sum(self, varlist, full_vars=False):
+        '''
+        Returns the value of the objective function given the data and the
+        model trade shares.
+        '''
+        errors = self.get_errors(varlist, full_vars)
+        return np.dot(errors, errors)
 
 
     def replace_id_coord(self, constr, drop_wahsusana=False):
@@ -417,8 +442,6 @@ class Estimate(object):
                              + "'static' or 'dynamic'")
         bounds = self.get_bounds(constr, full_vars)
 
-        print(len(bounds))
-        print(len(x0))
         assert len(bounds[0]) == len(x0)
 
         nlp = ipopt.problem( n=len(x0),
@@ -521,25 +544,335 @@ class Estimate(object):
             return result
 
 
-    def input_to_jhwi(self, x):
+    def full_to_short_i(self):
         '''
-        x: pd.DataFrame. arguments for my function.
+        returns the indices to select short varlist from full varlist
+        '''
+        i = self.div_indices[True]
+        res = np.concatenate(([0],
+                              range(i['long_unknown_s'], i['long_e']),
+                              range(i['lat_unknown_s'], i['lat_e']),
+                              range(i['a_s'], i['a_e']))
+                            )
+        return res
 
+
+    def output_to_jhwi(self, output):
+        '''
         Returns the initial value to evaluate the MATLAB objective function.
         '''
-        x = x.values.flatten()
-
+        varlist = output_to_varlist(output)
+        # Go from sigma to zeta
+        varlist[0] = varlist[0]/2
+        # add useless parameter = 4 in index 1.
+        varlist = np.insert(varlist, 1, 4)
+        # Insert known coordinates. TEST THIS
         i = self.div_indices[False]
-        res = np.concatenate(([x[0]/2.0, 4],
-                              self.df_known['long_x'].values,
-                              x[i['long_s']: i['long_e']],
-                              self.df_known['lat_y'].values,
-                              x[i['lat_s']: i['lat_e']],
-                              x[i['a_s']: i['a_e'] + 1]))
-        pd.Series(res).to_csv('input_to_jhwi.csv', index=False)
+        varlist = np.insert(varlist,
+                            i['lat_s']+2,
+                            self.df_known['lat_y'].values)
+
+        pd.Series(varlist).to_csv('input_to_jhwi.csv', index=False)
 
 
-# Now define optimization problem
+    def get_variance_gmm(self, varlist, full_vars=False):
+        '''
+        Computes the variance-covariance matrix of the estimators according to
+        the GMM formula. (see notes.pdf)
+        '''
+        errors = self.get_errors(varlist, full_vars)
+
+        # Make column vector
+        errors = np.expand_dims(errors, 1)
+
+        # Evaluate errors jacobian at estimated parameter.
+        jac = self.jac_errors(varlist)
+
+        # Remove Kanes' a, since it is fixed.
+        kanes_i = self.div_indices[full_vars]['a_s'] + 1
+        jac = np.delete(jac, kanes_i, axis=1)
+
+        #assert np.shape(jac) == (650, 48)
+
+        # Build variance-covariance matrix
+        bread_top = np.linalg.inv(np.dot(np.transpose(jac), jac))
+        ham = np.linalg.multi_dot((np.transpose(jac),
+                                   errors,
+                                   np.transpose(errors),
+                                   jac))
+        bread_bottom = bread_top
+
+        return np.linalg.multi_dot((bread_top, ham, bread_bottom))
+
+
+    def get_variance(self, varlist, var_type='white', full_vars=False):
+        '''
+        Computes the variance-covariance matrix of the estimators according to
+        the white formula. (see paper)
+        '''
+        errors = self.get_errors(varlist, full_vars)
+
+        # Make column vector
+        errors = np.expand_dims(errors, 1)
+
+        if full_vars:
+            i = self.div_indices[True]
+            jac = self.jac_errors_full_vars(varlist)
+            jac = pd.DataFrame(jac)
+            jac = jac.drop(columns = ([1]
+                           + range(i['long_s'], i['long_unknown_s'])
+                           + range(i['lat_s'], i['lat_unknown_s'])))
+            jac = jac.values
+        else:
+            # Evaluate errors jacobian at estimated parameter.
+            jac = self.jac_errors(varlist)
+
+        # Remove Kanes' a, since it is fixed.
+        kanes_i = self.div_indices[False]['a_s'] + 1
+        jac = np.delete(jac, kanes_i, axis=1)
+
+        bread = np.linalg.inv(np.dot( np.transpose(jac), jac ))
+
+        # Build variance-covariance matrix, according to var_type
+        if var_type == 'white':
+            ham = np.dot(np.transpose(jac * errors), jac * errors)
+            return np.linalg.multi_dot((bread, ham, bread))
+
+        elif var_type == 'homo':
+            return (np.sum(errors**2) / len(errors)) * bread
+
+        else:
+            raise ValueError("Please specify the variance type to be one of "
+                    + "'white' or 'homo'")
+
+
+    def simulate_contour_data(self,
+                              varlist,
+                              size=20000,
+                              var_type='white',
+                              full_vars=False):
+        '''
+        varlist is taken to be the point estimate vector.
+
+        Gets the var_type variance matrix using varlist and simulates size
+        draws from a normal distribution with mean varlist and variance.
+        '''
+        if full_vars:
+            mean = varlist[self.full_to_short_i()]
+        # Remove Kanes
+        kanes_i = self.div_indices[False]['a_s'] + 1
+        mean = np.delete(mean, kanes_i)
+
+        cov = self.get_variance(varlist,
+                                var_type=var_type,
+                                full_vars=full_vars)
+
+        sims = np.random.multivariate_normal(mean, cov, size)
+
+        # Select only unknown coordinates
+        i = self.div_indices[False]
+        sims = sims[ :, range(i['long_s'], i['long_e'])
+                        + range(i['lat_s'], i['lat_e']) ]
+        mean = mean[ range(i['long_s'], i['long_e'])
+                     + range(i['lat_s'], i['lat_e']) ]
+
+        # add id_lng; id_lat headers
+        ids = self.df_unknown['id'].tolist()
+        id_header = [i + '_lng' for i in ids] + [i + '_lat' for i in ids]
+
+        df = pd.DataFrame( sims, columns = id_header )
+        df.to_csv('./estim_results/plot_data_' + var_type + '.csv',
+                  index=False)
+
+        return df
+
+
+    def get_size(self, zeta, alpha, distances, scale_kanes=False, theta=4.0):
+        '''
+        Returns the fundamental size of cities:
+            Size_i proportional to L_i T_i^(1/theta)
+        '''
+        factor_1 = alpha**(1 + 1.0/theta)
+
+        ## Build summation
+        # This part draws from self.s_ij_model()
+        a = self.tile_nodiag(alpha)
+        elems = a * (distances ** (-zeta))
+        elems = np.reshape(elems, (self.num_cities, self.num_cities - 1))
+        # Add within-city component. Assumed within-city distance: 30 km.
+        own_factor = (30 ** (-zeta)) * alpha
+        factor_2 = np.sum(elems, axis = 1).flatten() + own_factor
+
+        sizes = factor_1 * factor_2
+        if scale_kanes:
+            sizes = 100 * sizes / sizes[1]
+        return sizes
+
+
+    def get_size_variance(self, varlist, scale_kanes=False, var_type='white'):
+        '''
+        Applies Delta Method to get the variance-covariance matrix of the city
+        size estimates.
+
+        Return the variance-covariance matrix of sizes.
+        '''
+        def size_for_grad(v):
+            '''
+            get_size function for autograd
+            It can standardize size (so Kanes = 100)
+            '''
+            # Unpack arguments
+            zeta = v[0]
+            i = self.div_indices[True]
+            lng_guess = v[i['long_s']: i['long_e']]
+            lat_guess = v[i['lat_s']: i['lat_e']]
+            alpha = v[i['a_s']:]
+            # Get sizes
+            sizes = self.get_size(zeta,
+                                  alpha,
+                                  self.fetch_dist(lat_guess,
+                                                  lng_guess,
+                                                  True),
+                                  scale_kanes=scale_kanes)
+            return sizes
+
+        # Get Jacobian
+        jac_size = jacobian(size_for_grad)
+        # Evaluate
+        j = jac_size(varlist)
+
+        # Remove variables that are fixed
+        i = self.div_indices[True]
+        j = pd.DataFrame(j)
+        j = j.drop(columns = ([1]
+                       + range(i['long_s'], i['long_unknown_s'])
+                       + range(i['lat_s'], i['lat_unknown_s'])))
+        j = j.values
+        ## Remove Kanes' a, since it is fixed.
+        kanes_i = self.div_indices[False]['a_s'] + 1
+        j = np.delete(j, kanes_i, axis=1)
+
+        var = self.get_variance(varlist, var_type=var_type, full_vars=True)
+
+        return np.linalg.multi_dot((j, var, np.transpose(j)))
+
+
+    def export_results(self, varlist):
+        '''
+        varlist is in jhwi format:
+        (zeta, useless, long_known, long_unknown, lat_known, lat_unknown, a)
+        Exports zeta.csv, coordinates.csv, cities.csv, simulation.csv
+        '''
+        # 1. Fetch standard error of estimates
+        varlist_cov_white = self.get_variance(varlist,
+                                              var_type='white',
+                                              full_vars=True)
+        varlist_cov_homo = self.get_variance(varlist,
+                                             var_type='homo',
+                                             full_vars=True)
+        size_cov_white = self.get_size_variance(varlist, var_type='white')
+        size_cov_homo = self.get_size_variance(varlist, var_type='homo')
+
+        varlist_sd_white = np.sqrt( np.diag(varlist_cov_white) )
+        varlist_sd_homo = np.sqrt( np.diag(varlist_cov_homo) )
+        size_sd_white = np.sqrt( np.diag(size_cov_white) )
+        size_sd_homo = np.sqrt( np.diag(size_cov_homo) )
+
+        # 2. Unpack varlist arguments
+        zeta = varlist[0]
+        i = self.div_indices[True]
+        lng = varlist[i['long_s']: i['long_e']]
+        lng_estim = varlist[i['long_unknown_s']: i['long_e']]
+        lat = varlist[i['lat_s']: i['lat_e']]
+        lat_estim = varlist[i['lat_unknown_s']: i['lat_e']]
+        alpha = varlist[i['a_s']:]
+
+        # 3. Save zeta.csv
+        df_zeta = pd.DataFrame([[zeta,
+                                 varlist_sd_white[0],
+                                 varlist_sd_homo[0]]], columns=['zeta',
+                                                                'zeta_sd_white',
+                                                                'zeta_sd_homo']
+                              )
+        df_zeta.to_csv('./estim_results/zeta.csv', index=False)
+
+        # 4. Save estimated coordinates + standard errors
+        ## Unpack arguments
+        j = self.div_indices[False]
+
+        lng_white = varlist_sd_white[j['long_s']: j['long_e']]
+        lng_homo = varlist_sd_homo[j['long_s']: j['long_e']]
+
+        lat_white = varlist_sd_white[j['lat_s']: j['lat_e']]
+        lat_homo = varlist_sd_homo[j['lat_s']: j['lat_e']]
+
+        ## Fetch IDs
+        ids_coord = self.df_unknown['id'].values
+        coord_array = np.column_stack((ids_coord,
+                                       lng_estim,
+                                       lng_white,
+                                       lng_homo,
+                                       lat_estim,
+                                       lat_white,
+                                       lat_homo))
+        coordinates = pd.DataFrame( coord_array,
+                                    columns = ['id',
+                                               'longitude',
+                                               'longitude_sd_white',
+                                               'longitude_sd_homo',
+                                               'latitude',
+                                               'latitude_sd_white',
+                                               'latitude_sd_homo']
+                                  )
+        coordinates.to_csv('./estim_results/coordinates.csv', index=False)
+
+        # 5. Save sizes and alphas (+ standard errors)
+        distances = self.fetch_dist(lat, lng, full_vars=True)
+        size = self.get_size(zeta, alpha, distances)
+
+        alpha = varlist[i['a_s']:]
+        alpha_white = varlist_sd_white[j['a_s']:]
+        alpha_homo = varlist_sd_white[j['a_s']:]
+
+        ## Insert missing s.e. for kanes in alpha and in sizes
+        alpha_white = np.insert(alpha_white, 1, np.nan)
+        alpha_homo = np.insert(alpha_homo, 1, np.nan)
+        ## These entries would otherwise be zero
+        size_sd_white[1] = np.nan
+        size_sd_homo[1] = np.nan
+
+        ids_city = self.df_coordinates['id'].values
+        city_array = np.column_stack((ids_city,
+                                      size,
+                                      size_sd_white,
+                                      size_sd_homo,
+                                      alpha,
+                                      alpha_white,
+                                      alpha_homo))
+        cities = pd.DataFrame( city_array,
+                               columns = ['id',
+                                          'size',
+                                          'size_sd_white',
+                                          'size_sd_homo',
+                                          'alpha',
+                                          'alpha_sd_white',
+                                          'alpha_sd_homo']
+                             )
+        cities.to_csv('./estim_results/cities.csv', index=False)
+
+        # 6. Generate and store contour data, white and homo
+        for v in ['white', 'homo']:
+            self.simulate_contour_data(varlist,
+                                       var_type=v,
+                                       full_vars=True)
+
+
+
+
+
+
+
+# Now define optimization problem for IPOPT
 class Optimizer(Estimate):
 
     def __init__(self, build_type):

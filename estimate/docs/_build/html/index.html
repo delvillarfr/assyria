@@ -1,0 +1,281 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Welcome to Assyria’s documentation! &#8212; Assyria 0.1 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link href="_static/style.css" rel="stylesheet" type="text/css">
+
+  </head>
+  <body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="welcome-to-assyria-s-documentation">
+<h1>Welcome to Assyria’s documentation!<a class="headerlink" href="#welcome-to-assyria-s-documentation" title="Permalink to this headline">¶</a></h1>
+<div class="toctree-wrapper compound">
+</div>
+</div>
+<div class="section" id="estimation">
+<h1>Estimation<a class="headerlink" href="#estimation" title="Permalink to this headline">¶</a></h1>
+<dl class="class">
+<dt id="estimate.Estimate">
+<em class="property">class </em><code class="descclassname">estimate.</code><code class="descname">Estimate</code><span class="sig-paren">(</span><em>build_type</em>, <em>lat=(36</em>, <em>42)</em>, <em>lng=(27</em>, <em>45)</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate" title="Permalink to this definition">¶</a></dt>
+<dd><dl class="method">
+<dt id="estimate.Estimate.export_results">
+<code class="descname">export_results</code><span class="sig-paren">(</span><em>varlist</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.export_results"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.export_results" title="Permalink to this definition">¶</a></dt>
+<dd><p>varlist is in jhwi format:
+(zeta, useless, long_known, long_unknown, lat_known, lat_unknown, a)
+Exports zeta.csv, coordinates.csv, cities.csv, simulation.csv</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.fetch_dist">
+<code class="descname">fetch_dist</code><span class="sig-paren">(</span><em>lat_guess</em>, <em>lng_guess</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.fetch_dist"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.fetch_dist" title="Permalink to this definition">¶</a></dt>
+<dd><p>Wrapper</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.full_to_short_i">
+<code class="descname">full_to_short_i</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.full_to_short_i"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.full_to_short_i" title="Permalink to this definition">¶</a></dt>
+<dd><p>returns the indices to select short varlist from full varlist</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.gen_data">
+<code class="descname">gen_data</code><span class="sig-paren">(</span><em>len_sim</em>, <em>perturb</em>, <em>rank=None</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.gen_data"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.gen_data" title="Permalink to this definition">¶</a></dt>
+<dd><p>rank: int. Process number in parallelized computing.
+Returns simulation dataframe sorted by objective value</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_best_result">
+<code class="descname">get_best_result</code><span class="sig-paren">(</span><em>results</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_best_result"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_best_result" title="Permalink to this definition">¶</a></dt>
+<dd><p>results: pd.DataFrame. It is the output of the parallelized execution.
+returns the row with minimum objective function value.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_bounds">
+<code class="descname">get_bounds</code><span class="sig-paren">(</span><em>constr</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_bounds"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_bounds" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns (lb, ub), where lb and ub are lists for the bounds.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_coordinate_pairs">
+<code class="descname">get_coordinate_pairs</code><span class="sig-paren">(</span><em>lat_guess</em>, <em>lng_guess</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_coordinate_pairs"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_coordinate_pairs" title="Permalink to this definition">¶</a></dt>
+<dd><p>full_vars: bool. If True, the known coordinates are included as
+variables of the objective and gradient.</p>
+<p>This is an alternative implementation of the fetching distance process,</p>
+<p>Leverages the fact that the iticount data is sorted according to
+id_jhwi_j first, then by id_jhwi_i, and the coordinates are sorted
+according to id_jhwi.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_errors">
+<code class="descname">get_errors</code><span class="sig-paren">(</span><em>varlist</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_errors"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_errors" title="Permalink to this definition">¶</a></dt>
+<dd><p>varlist = np.array([zeta, alpha, lat_guess, lng_guess]).</p>
+<p>Returns the difference of data and model trade shares.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_size">
+<code class="descname">get_size</code><span class="sig-paren">(</span><em>zeta</em>, <em>alpha</em>, <em>distances</em>, <em>scale_kanes=False</em>, <em>theta=4.0</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_size"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_size" title="Permalink to this definition">¶</a></dt>
+<dd><dl class="docutils">
+<dt>Returns the fundamental size of cities:</dt>
+<dd>Size_i proportional to L_i T_i^(1/theta)</dd>
+</dl>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_size_variance">
+<code class="descname">get_size_variance</code><span class="sig-paren">(</span><em>varlist</em>, <em>scale_kanes=False</em>, <em>var_type='white'</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_size_variance"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_size_variance" title="Permalink to this definition">¶</a></dt>
+<dd><p>Applies Delta Method to get the variance-covariance matrix of the city
+size estimates.</p>
+<p>Return the variance-covariance matrix of sizes.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_variance">
+<code class="descname">get_variance</code><span class="sig-paren">(</span><em>varlist</em>, <em>var_type='white'</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_variance"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_variance" title="Permalink to this definition">¶</a></dt>
+<dd><p>Computes the variance-covariance matrix of the estimators according to
+the white formula. (see paper)</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_variance_gmm">
+<code class="descname">get_variance_gmm</code><span class="sig-paren">(</span><em>varlist</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_variance_gmm"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_variance_gmm" title="Permalink to this definition">¶</a></dt>
+<dd><p>Computes the variance-covariance matrix of the estimators according to
+the GMM formula. (see notes.pdf)</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.haversine_approx">
+<code class="descname">haversine_approx</code><span class="sig-paren">(</span><em>coord_i</em>, <em>coord_j</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.haversine_approx"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.haversine_approx" title="Permalink to this definition">¶</a></dt>
+<dd><p>coord_i, coord_j: np.array. 2 columns, len(iticount) rows. First column
+(column 0) is latitude, second column (column 1) is longitude.</p>
+<p>Returns the approximation of the Haversine formula described in the
+estimation section of the paper.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.initial_cond">
+<code class="descname">initial_cond</code><span class="sig-paren">(</span><em>len_sim=None</em>, <em>perturb=None</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.initial_cond"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.initial_cond" title="Permalink to this definition">¶</a></dt>
+<dd><p>len_sim: int. Specifies the number of draws to take.
+perturb: float. Specifies a percentage deviation from the default
+initial value.</p>
+<p>Returns default initial condition if perturb is not specified, and an
+array of perturbed values of dimension (len_sim, numvars)</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.output_to_jhwi">
+<code class="descname">output_to_jhwi</code><span class="sig-paren">(</span><em>output</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.output_to_jhwi"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.output_to_jhwi" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the initial value to evaluate the MATLAB objective function.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.replace_id_coord">
+<code class="descname">replace_id_coord</code><span class="sig-paren">(</span><em>constr</em>, <em>drop_wahsusana=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.replace_id_coord"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.replace_id_coord" title="Permalink to this definition">¶</a></dt>
+<dd><p>constr: pd.DataFrame. Specifies upper and lower bounds for
+coordinates of cities.</p>
+<p>Replaces the city id with its corresponding latitudes and longitudes in
+the constraints datasets.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.resolve">
+<code class="descname">resolve</code><span class="sig-paren">(</span><em>result</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.resolve"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.resolve" title="Permalink to this definition">¶</a></dt>
+<dd><p>result: pd.DataFrame. Output of self.get_best_result</p>
+<p>Recursively digs into the coordinates results if the maximum number of
+iterations was reached. Otherwise it returns the best solution.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.s_ij_model">
+<code class="descname">s_ij_model</code><span class="sig-paren">(</span><em>zeta</em>, <em>alpha</em>, <em>distances</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.s_ij_model"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.s_ij_model" title="Permalink to this definition">¶</a></dt>
+<dd><p>zeta: float. The distance elasticity of trade.
+alpha: np.array. One for each importing city.
+distances: np.array. Contains distances between all j, i pairs,
+excluding j, j pairs.</p>
+<p>Idea: cast elements as matrix, add over axis=0,
+repeat (number of cities - 1), divide elements by this new 1-dim array.</p>
+<p>Returns np.array: the model-predicted trade shares</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.simulate_contour_data">
+<code class="descname">simulate_contour_data</code><span class="sig-paren">(</span><em>varlist</em>, <em>size=20000</em>, <em>var_type='white'</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.simulate_contour_data"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.simulate_contour_data" title="Permalink to this definition">¶</a></dt>
+<dd><p>varlist is taken to be the point estimate vector.</p>
+<p>Gets the var_type variance matrix using varlist and simulates size
+draws from a normal distribution with mean varlist and variance.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.solve">
+<code class="descname">solve</code><span class="sig-paren">(</span><em>x0</em>, <em>constraint_type='static'</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.solve"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.solve" title="Permalink to this definition">¶</a></dt>
+<dd><p>x0: list. It is the initial value.
+constraint_type: str. One of ‘static’ or ‘dynamic’.
+Returns a one-row dataframe with optimization information.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.sqerr_sum">
+<code class="descname">sqerr_sum</code><span class="sig-paren">(</span><em>varlist</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.sqerr_sum"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.sqerr_sum" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the value of the objective function given the data and the
+model trade shares.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.tile_nodiag">
+<code class="descname">tile_nodiag</code><span class="sig-paren">(</span><em>arr</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.tile_nodiag"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.tile_nodiag" title="Permalink to this definition">¶</a></dt>
+<dd><p>arr: np.array. A 1-dim array of length self.num_cities.</p>
+<p>Returns an array repeating arr the number of times given by
+self.num_cities, but extracting value in index j on repetition j.</p>
+<p>example: If arr = np.array([1, 2, 3]) then self.tile_nodiag(arr) returns
+np.array([2, 3, 1, 3, 1, 2]).</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="#">Assyria</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="#">Documentation overview</a><ul>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2017, Hortacsu.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.6.3</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.10</a>
+      
+      |
+      <a href="_sources/index.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

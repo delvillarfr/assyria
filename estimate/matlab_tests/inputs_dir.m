@@ -271,7 +271,7 @@ setup.order = 1;
 %tic
 %funcs = adigatorGenFiles4Ipopt(setup);
 %gentime = toc;
-%
+
 % Functions
 funcs.objective = @(theta)sqerr_sum(theta,auxdata);
 funcs.gradient = @(theta)sqerr_sum_Grd(theta,auxdata);
@@ -280,12 +280,15 @@ inputs = table2array(readtable('inputs_dir.csv', 'HeaderLines', 1));
 
 sqerr = ones(1000, 1) ;
 grads = ones(1000, 80) ;
+errors = ones(1000, 650) ;
 
 for i = 1:1000
 	theta = inputs(i, :) ;
 	sqerr(i, 1) = funcs.objective(theta') ;
 	grads(i, :) = funcs.gradient(theta') ;
+	errors(i, :) = error_residual(theta', auxdata) ;
 end
 
 writetable(array2table(grads), 'inputs_gradients_dir.csv') ;
 writetable(array2table(sqerr), 'inputs_objective_dir.csv') ;
+writetable(array2table(errors), 'inputs_errors_dir.csv') ;

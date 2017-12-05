@@ -1,0 +1,977 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>estimate &#8212; Assyria 0.1 documentation</title>
+    <link rel="stylesheet" href="../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link href="../_static/style.css" rel="stylesheet" type="text/css">
+
+  </head>
+  <body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for estimate</h1><div class="highlight"><pre>
+<span></span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">Model Parameter Estimation</span>
+<span class="sd">&#39;&#39;&#39;</span>
+
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">ConfigParser</span>
+
+
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">autograd.numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">autograd</span> <span class="k">import</span> <span class="n">grad</span>
+<span class="kn">from</span> <span class="nn">autograd</span> <span class="k">import</span> <span class="n">jacobian</span>
+<span class="kn">import</span> <span class="nn">ipopt</span>
+
+<span class="kn">import</span> <span class="nn">sys</span>
+
+
+
+<span class="c1"># Configuration</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="c1"># execute only if run as a script</span>
+    <span class="n">config</span> <span class="o">=</span> <span class="n">ConfigParser</span><span class="o">.</span><span class="n">ConfigParser</span><span class="p">()</span>
+
+    <span class="c1">## file keys.ini should be in process.py parent directory.</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span> <span class="o">+</span> <span class="s1">&#39;/keys.ini&#39;</span><span class="p">)</span>
+    <span class="n">config</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span> <span class="o">+</span> <span class="s1">&#39;/keys.ini&#39;</span><span class="p">)</span>
+
+    <span class="c1">## Paths</span>
+    <span class="n">root</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;paths&#39;</span><span class="p">,</span> <span class="s1">&#39;root&#39;</span><span class="p">)</span>
+    <span class="n">root_jhwi</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;paths&#39;</span><span class="p">,</span> <span class="s1">&#39;root_jhwi&#39;</span><span class="p">)</span>
+    <span class="n">process</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;paths&#39;</span><span class="p">,</span> <span class="s1">&#39;process&#39;</span><span class="p">)</span>
+
+
+
+<div class="viewcode-block" id="Estimate"><a class="viewcode-back" href="../index.html#estimate.Estimate">[docs]</a><span class="k">class</span> <span class="nc">Estimate</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">build_type</span><span class="p">,</span> <span class="n">lat</span> <span class="o">=</span> <span class="p">(</span><span class="mi">36</span><span class="p">,</span> <span class="mi">42</span><span class="p">),</span> <span class="n">lng</span> <span class="o">=</span> <span class="p">(</span><span class="mi">27</span><span class="p">,</span> <span class="mi">45</span><span class="p">)):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        build_type: str. One of &quot;directional&quot; or &quot;non-directional&quot;.</span>
+<span class="sd">        lat: 2-element tuple. Contains assumed lower and upper latitude bounds</span>
+<span class="sd">        lng: 2-element tuple. Contains assumed lower and upper longitude bounds</span>
+
+<span class="sd">        Loads all processed datasets.</span>
+
+<span class="sd">            Sets coordinates in degrees.</span>
+<span class="sd">        Sets known and unknown coordinates datasets as separate attributes.</span>
+
+<span class="sd">        Adds selected vars from trade data with known coordinates as</span>
+<span class="sd">        attribute. This will be the main dataset to work with further down.</span>
+
+<span class="sd">        Saves the gradient of the objective function as attribute, to avoid</span>
+<span class="sd">        calling autograd multiple times.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lat</span> <span class="o">=</span> <span class="n">lat</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lng</span> <span class="o">=</span> <span class="n">lng</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">build_type</span> <span class="o">=</span> <span class="n">build_type</span>
+
+        <span class="c1"># Load processed datasets</span>
+        <span class="k">if</span> <span class="n">build_type</span> <span class="o">==</span> <span class="s1">&#39;directional&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">df_iticount</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">root</span> <span class="o">+</span> <span class="n">process</span>
+                                           <span class="o">+</span> <span class="s1">&#39;iticount_dir.csv&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">root</span> <span class="o">+</span> <span class="n">process</span>
+                                              <span class="o">+</span> <span class="s1">&#39;coordinates_dir.csv&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">df_constr_dyn</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">root</span> <span class="o">+</span> <span class="n">process</span>
+                                             <span class="o">+</span> <span class="s1">&#39;constraints_dir_dyn.csv&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">df_constr_stat</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">root</span> <span class="o">+</span> <span class="n">process</span>
+                                              <span class="o">+</span> <span class="s1">&#39;constraints_dir_stat.csv&#39;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">build_type</span> <span class="o">==</span> <span class="s1">&#39;non_directional&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">df_iticount</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">root</span> <span class="o">+</span> <span class="n">process</span>
+                                           <span class="o">+</span> <span class="s1">&#39;iticount_nondir.csv&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">root</span> <span class="o">+</span> <span class="n">process</span>
+                                              <span class="o">+</span> <span class="s1">&#39;coordinates_nondir.csv&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">df_constr_dyn</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">root</span> <span class="o">+</span> <span class="n">process</span>
+                                             <span class="o">+</span> <span class="s1">&#39;constraints_nondir_dyn.csv&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">df_constr_stat</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">root</span> <span class="o">+</span> <span class="n">process</span>
+                                              <span class="o">+</span> <span class="s1">&#39;constraints_nondir_stat.csv&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Initialize class with &#39;directional&#39; or &quot;</span>
+                             <span class="o">+</span> <span class="s2">&quot;&#39;non_directional&#39;&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Save number of cities</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">)</span>
+
+        <span class="c1"># Set coordinates in degrees (this should be done in process)</span>
+        <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;long_x&#39;</span><span class="p">,</span> <span class="s1">&#39;lat_y&#39;</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="n">v</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="n">v</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+                                                <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;float64&#39;</span><span class="p">)</span>
+
+        <span class="c1"># Known cities</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">df_known</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="s1">&#39;cert&#39;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">,</span>
+            <span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="s1">&#39;long_x&#39;</span><span class="p">,</span> <span class="s1">&#39;lat_y&#39;</span><span class="p">]</span>
+        <span class="p">]</span>
+        <span class="c1"># Lost cities</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">df_unknown</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="s1">&#39;cert&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="mi">3</span><span class="p">,</span>
+            <span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="s1">&#39;long_x&#39;</span><span class="p">,</span> <span class="s1">&#39;lat_y&#39;</span><span class="p">]</span>
+        <span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_cities_known</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">df_known</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_cities_unknown</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">df_unknown</span><span class="p">)</span>
+
+        <span class="c1"># Add known locations to trade data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">df_main</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_iticount</span><span class="p">[[</span><span class="s1">&#39;id_j&#39;</span><span class="p">,</span> <span class="s1">&#39;id_i&#39;</span><span class="p">,</span> <span class="s1">&#39;s_ij&#39;</span><span class="p">]]</span>
+        <span class="k">for</span> <span class="n">status</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;i&#39;</span><span class="p">,</span> <span class="s1">&#39;j&#39;</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">df_main</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">df_main</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">df_known</span><span class="p">,</span>
+                                              <span class="n">how</span> <span class="o">=</span> <span class="s1">&#39;left&#39;</span><span class="p">,</span>
+                                              <span class="n">left_on</span> <span class="o">=</span> <span class="s1">&#39;id_&#39;</span><span class="o">+</span><span class="n">status</span><span class="p">,</span>
+                                              <span class="n">right_on</span> <span class="o">=</span> <span class="s1">&#39;id&#39;</span>
+                                             <span class="p">)</span>
+                            <span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;long_x&#39;</span><span class="p">:</span> <span class="s1">&#39;long_x_&#39;</span><span class="o">+</span><span class="n">status</span><span class="p">,</span>
+                                             <span class="s1">&#39;lat_y&#39;</span><span class="p">:</span> <span class="s1">&#39;lat_y_&#39;</span><span class="o">+</span><span class="n">status</span><span class="p">})</span>
+                           <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">df_main</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_main</span><span class="o">.</span><span class="n">drop</span><span class="p">([</span><span class="s1">&#39;id_x&#39;</span><span class="p">,</span> <span class="s1">&#39;id_y&#39;</span><span class="p">],</span> <span class="n">axis</span> <span class="o">=</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Automatic differentiation of objective and errors</span>
+
+        <span class="c1">## Objective</span>
+        <span class="c1">### Using only relevant vars</span>
+        <span class="k">def</span> <span class="nf">objective</span><span class="p">(</span><span class="n">varlist</span><span class="p">):</span>
+            <span class="sd">&#39;&#39;&#39; This is the formulation for autograd. &#39;&#39;&#39;</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">sqerr_sum</span><span class="p">(</span><span class="n">varlist</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">grad</span> <span class="o">=</span> <span class="n">grad</span><span class="p">(</span><span class="n">objective</span><span class="p">)</span>
+        <span class="c1">### Using all vars</span>
+        <span class="k">def</span> <span class="nf">objective_full_vars</span><span class="p">(</span><span class="n">varlist</span><span class="p">):</span>
+            <span class="sd">&#39;&#39;&#39; This is the formulation for autograd. &#39;&#39;&#39;</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">sqerr_sum</span><span class="p">(</span><span class="n">varlist</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">grad_full_vars</span> <span class="o">=</span> <span class="n">grad</span><span class="p">(</span><span class="n">objective_full_vars</span><span class="p">)</span>
+
+        <span class="c1">## Errors</span>
+        <span class="k">def</span> <span class="nf">error_autograd</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_errors</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">jac_errors</span> <span class="o">=</span> <span class="n">jacobian</span><span class="p">(</span><span class="n">error_autograd</span><span class="p">)</span>
+        <span class="c1">### Using all vars</span>
+        <span class="k">def</span> <span class="nf">error_autograd_full_vars</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_errors</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">jac_errors_full_vars</span> <span class="o">=</span> <span class="n">jacobian</span><span class="p">(</span><span class="n">error_autograd_full_vars</span><span class="p">)</span>
+
+        <span class="c1"># Save array index that views array of size len(self.df_coordinates)</span>
+        <span class="c1"># and selects off-diagonal elements. See self.tile_nodiag.</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">index_nodiag</span> <span class="o">=</span> <span class="n">i</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="o">*</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+
+        <span class="c1"># Save indices to unpack argument of objective and gradient</span>
+        <span class="c1"># There is a set of indices if we are using the full set of coordinates</span>
+        <span class="c1"># as arguments, or if we use only the only the unknown cities</span>
+        <span class="c1"># coordinates as arguments.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="kc">True</span><span class="p">:</span> <span class="p">{</span><span class="s1">&#39;long_unknown_s&#39;</span><span class="p">:</span> <span class="mi">2</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities_known</span><span class="p">,</span>
+                   <span class="s1">&#39;long_s&#39;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+                   <span class="s1">&#39;long_e&#39;</span><span class="p">:</span> <span class="mi">2</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="p">,</span>
+                   <span class="s1">&#39;lat_unknown_s&#39;</span><span class="p">:</span> <span class="mi">2</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities_known</span><span class="p">,</span>
+                   <span class="s1">&#39;lat_s&#39;</span><span class="p">:</span> <span class="mi">2</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="p">,</span>
+                   <span class="s1">&#39;lat_e&#39;</span><span class="p">:</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">2</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="p">,</span>
+                   <span class="s1">&#39;a_s&#39;</span><span class="p">:</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">2</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="p">,</span>
+                   <span class="s1">&#39;a_e&#39;</span><span class="p">:</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">3</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="p">},</span>
+            <span class="kc">False</span><span class="p">:</span> <span class="p">{</span><span class="s1">&#39;long_s&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="s1">&#39;long_e&#39;</span><span class="p">:</span> <span class="mi">1</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities_unknown</span><span class="p">,</span>
+                    <span class="s1">&#39;lat_s&#39;</span><span class="p">:</span> <span class="mi">1</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities_unknown</span><span class="p">,</span>
+                    <span class="s1">&#39;lat_e&#39;</span><span class="p">:</span> <span class="mi">1</span> <span class="o">+</span> <span class="mi">2</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cities_unknown</span><span class="p">,</span>
+                    <span class="s1">&#39;a_s&#39;</span><span class="p">:</span> <span class="mi">1</span> <span class="o">+</span> <span class="mi">2</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cities_unknown</span><span class="p">,</span>
+                    <span class="s1">&#39;a_e&#39;</span><span class="p">:</span> <span class="mi">1</span> <span class="o">+</span> <span class="mi">2</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cities_unknown</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="p">}</span>
+        <span class="p">}</span>
+
+        <span class="c1"># Save trade shares located in df_main</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">df_shares</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_iticount</span><span class="p">[</span><span class="s1">&#39;s_ij&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+
+
+<div class="viewcode-block" id="Estimate.haversine_approx"><a class="viewcode-back" href="../index.html#estimate.Estimate.haversine_approx">[docs]</a>    <span class="k">def</span> <span class="nf">haversine_approx</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">coord_i</span><span class="p">,</span> <span class="n">coord_j</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        coord_i, coord_j: np.array. 2 columns, len(iticount) rows. First column</span>
+<span class="sd">        (column 0) is latitude, second column (column 1) is longitude.</span>
+
+<span class="sd">        Returns the approximation of the Haversine formula described in the</span>
+<span class="sd">        estimation section of the paper.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">factor_out</span> <span class="o">=</span> <span class="mf">10000.0</span><span class="o">/</span><span class="mi">90</span>
+        <span class="n">factor_in</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="mf">37.9</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">180</span><span class="p">)</span>
+
+        <span class="n">lat_diff</span> <span class="o">=</span> <span class="n">coord_j</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">coord_i</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="n">lng_diff</span> <span class="o">=</span> <span class="n">coord_j</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">coord_i</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
+
+        <span class="n">diff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">((</span><span class="n">lat_diff</span><span class="p">,</span> <span class="n">factor_in</span> <span class="o">*</span> <span class="n">lng_diff</span><span class="p">))</span>
+
+        <span class="c1"># Re-declare object dtype: numpy bug</span>
+        <span class="c1"># https://stackoverflow.com/questions/18833639/attributeerror-in-python-numpy-when-constructing-function-for-certain-values</span>
+        <span class="c1">#return factor_out * np.sqrt( np.float64(np.sum(diff**2, axis=1)) )</span>
+        <span class="k">return</span> <span class="n">factor_out</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">diff</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Estimate.tile_nodiag"><a class="viewcode-back" href="../index.html#estimate.Estimate.tile_nodiag">[docs]</a>    <span class="k">def</span> <span class="nf">tile_nodiag</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arr</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        arr: np.array. A 1-dim array of length self.num_cities.</span>
+
+<span class="sd">        Returns an array repeating arr the number of times given by</span>
+<span class="sd">        self.num_cities, but extracting value in index j on repetition j.</span>
+
+<span class="sd">        example: If arr = np.array([1, 2, 3]) then self.tile_nodiag(arr) returns</span>
+<span class="sd">        np.array([2, 3, 1, 3, 1, 2]).</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">arr_tiled</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span><span class="n">arr</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">arr_tiled</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">index_nodiag</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="Estimate.get_coordinate_pairs"><a class="viewcode-back" href="../index.html#estimate.Estimate.get_coordinate_pairs">[docs]</a>    <span class="k">def</span> <span class="nf">get_coordinate_pairs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lat_guess</span><span class="p">,</span> <span class="n">lng_guess</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        full_vars: bool. If True, the known coordinates are included as</span>
+<span class="sd">        variables of the objective and gradient.</span>
+
+<span class="sd">        This is an alternative implementation of the fetching distance process,</span>
+
+<span class="sd">        Leverages the fact that the iticount data is sorted according to</span>
+<span class="sd">        id_jhwi_j first, then by id_jhwi_i, and the coordinates are sorted</span>
+<span class="sd">        according to id_jhwi.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">full_vars</span><span class="p">:</span>
+            <span class="n">lats</span> <span class="o">=</span> <span class="n">lat_guess</span>
+            <span class="n">longs</span> <span class="o">=</span> <span class="n">lng_guess</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lats</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">df_known</span><span class="p">[</span><span class="s1">&#39;lat_y&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">lat_guess</span><span class="p">))</span>
+            <span class="n">longs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">df_known</span><span class="p">[</span><span class="s1">&#39;long_x&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">lng_guess</span><span class="p">))</span>
+
+        <span class="n">coord_j</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">((</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">lats</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">longs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="p">))</span>
+        <span class="c1">#assert len(lats) == len(longs)</span>
+        <span class="n">coord_i</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">((</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tile_nodiag</span><span class="p">(</span><span class="n">lats</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tile_nodiag</span><span class="p">(</span><span class="n">longs</span><span class="p">)</span>
+        <span class="p">))</span>
+
+        <span class="k">return</span> <span class="p">(</span><span class="n">coord_i</span><span class="p">,</span> <span class="n">coord_j</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Estimate.fetch_dist"><a class="viewcode-back" href="../index.html#estimate.Estimate.fetch_dist">[docs]</a>    <span class="k">def</span> <span class="nf">fetch_dist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lat_guess</span><span class="p">,</span> <span class="n">lng_guess</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Wrapper</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">coords</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_coordinate_pairs</span><span class="p">(</span><span class="n">lat_guess</span><span class="p">,</span> <span class="n">lng_guess</span><span class="p">,</span> <span class="n">full_vars</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">haversine_approx</span><span class="p">(</span> <span class="n">coords</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">coords</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Estimate.s_ij_model"><a class="viewcode-back" href="../index.html#estimate.Estimate.s_ij_model">[docs]</a>    <span class="k">def</span> <span class="nf">s_ij_model</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">zeta</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">distances</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        zeta: float. The distance elasticity of trade.</span>
+<span class="sd">        alpha: np.array. One for each importing city.</span>
+<span class="sd">        distances: np.array. Contains distances between all j, i pairs,</span>
+<span class="sd">        excluding j, j pairs.</span>
+
+<span class="sd">        Idea: cast elements as matrix, add over axis=0,</span>
+<span class="sd">        repeat (number of cities - 1), divide elements by this new 1-dim array.</span>
+
+<span class="sd">        Returns np.array: the model-predicted trade shares</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tile_nodiag</span><span class="p">(</span><span class="n">alpha</span><span class="p">)</span>
+        <span class="n">elems</span> <span class="o">=</span> <span class="n">a</span> <span class="o">*</span> <span class="p">(</span><span class="n">distances</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="n">zeta</span><span class="p">))</span>
+
+        <span class="n">denom</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">elems</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="n">denom</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">denom</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">denom</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">denom</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">elems</span> <span class="o">/</span> <span class="n">denom</span></div>
+
+
+<div class="viewcode-block" id="Estimate.get_errors"><a class="viewcode-back" href="../index.html#estimate.Estimate.get_errors">[docs]</a>    <span class="k">def</span> <span class="nf">get_errors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">varlist</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        varlist = np.array([zeta, alpha, lat_guess, lng_guess]).</span>
+
+<span class="sd">        Returns the difference of data and model trade shares.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c1"># Unpack arguments</span>
+        <span class="n">zeta</span> <span class="o">=</span> <span class="n">varlist</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="n">i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="n">full_vars</span><span class="p">]</span>
+        <span class="n">lng_guess</span> <span class="o">=</span> <span class="n">varlist</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_e&#39;</span><span class="p">]]</span>
+        <span class="n">lat_guess</span> <span class="o">=</span> <span class="n">varlist</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_e&#39;</span><span class="p">]]</span>
+        <span class="n">alpha</span> <span class="o">=</span> <span class="n">varlist</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;a_s&#39;</span><span class="p">]:]</span>
+
+        <span class="c1">#assert len(lat_guess) == len(lng_guess)</span>
+
+        <span class="n">s_ij_model</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">s_ij_model</span><span class="p">(</span><span class="n">zeta</span><span class="p">,</span>
+                                     <span class="n">alpha</span><span class="p">,</span>
+                                     <span class="bp">self</span><span class="o">.</span><span class="n">fetch_dist</span><span class="p">(</span><span class="n">lat_guess</span><span class="p">,</span>
+                                                     <span class="n">lng_guess</span><span class="p">,</span>
+                                                     <span class="n">full_vars</span><span class="p">)</span>
+                                    <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_shares</span> <span class="o">-</span> <span class="n">s_ij_model</span></div>
+
+
+<div class="viewcode-block" id="Estimate.sqerr_sum"><a class="viewcode-back" href="../index.html#estimate.Estimate.sqerr_sum">[docs]</a>    <span class="k">def</span> <span class="nf">sqerr_sum</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">varlist</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Returns the value of the objective function given the data and the</span>
+<span class="sd">        model trade shares.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_errors</span><span class="p">(</span><span class="n">varlist</span><span class="p">,</span> <span class="n">full_vars</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">errors</span><span class="p">,</span> <span class="n">errors</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Estimate.replace_id_coord"><a class="viewcode-back" href="../index.html#estimate.Estimate.replace_id_coord">[docs]</a>    <span class="k">def</span> <span class="nf">replace_id_coord</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">constr</span><span class="p">,</span> <span class="n">drop_wahsusana</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        constr: pd.DataFrame. Specifies upper and lower bounds for</span>
+<span class="sd">        coordinates of cities.</span>
+
+<span class="sd">        Replaces the city id with its corresponding latitudes and longitudes in</span>
+<span class="sd">        the constraints datasets.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">constr</span> <span class="o">=</span> <span class="n">constr</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">drop_wahsusana</span><span class="p">:</span>
+            <span class="n">v</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;lb_lambda&#39;</span><span class="p">,</span> <span class="s1">&#39;ub_lambda&#39;</span><span class="p">,</span> <span class="s1">&#39;lb_varphi&#39;</span><span class="p">,</span> <span class="s1">&#39;ub_varphi&#39;</span><span class="p">]</span>
+            <span class="n">constr</span><span class="p">[</span><span class="n">v</span><span class="p">]</span> <span class="o">=</span> <span class="n">constr</span><span class="p">[</span><span class="n">v</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;wa01&#39;</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+
+        <span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">lats</span><span class="p">,</span> <span class="n">lngs</span><span class="p">)</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+                              <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="s1">&#39;lat_y&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+                              <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="s1">&#39;long_x&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+                            <span class="p">)</span>
+
+        <span class="n">tracker</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;lb_lambda&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">lat</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s1">&#39;ub_lambda&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">lat</span><span class="p">[</span><span class="mi">1</span><span class="p">]}</span>
+        <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">tracker</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="c1"># An empty column is transformed to float64, thus raising error</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">constr</span><span class="p">[</span><span class="n">var</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">constr</span><span class="p">[</span><span class="n">var</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="n">tracker</span><span class="p">[</span><span class="n">var</span><span class="p">])</span>
+                                          <span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">lats</span><span class="p">)</span>
+                              <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+                <span class="n">constr</span><span class="p">[</span><span class="n">var</span><span class="p">]</span> <span class="o">=</span> <span class="n">constr</span><span class="p">[</span><span class="n">var</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="n">tracker</span><span class="p">[</span><span class="n">var</span><span class="p">])</span>
+
+
+        <span class="n">tracker</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;lb_varphi&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">lng</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s1">&#39;ub_varphi&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">lng</span><span class="p">[</span><span class="mi">1</span><span class="p">]}</span>
+        <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">tracker</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">constr</span><span class="p">[</span><span class="n">var</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">constr</span><span class="p">[</span><span class="n">var</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="n">tracker</span><span class="p">[</span><span class="n">var</span><span class="p">])</span>
+                                          <span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">lngs</span><span class="p">)</span>
+                              <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+                <span class="n">constr</span><span class="p">[</span><span class="n">var</span><span class="p">]</span> <span class="o">=</span> <span class="n">constr</span><span class="p">[</span><span class="n">var</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="n">tracker</span><span class="p">[</span><span class="n">var</span><span class="p">])</span>
+
+        <span class="k">return</span> <span class="n">constr</span></div>
+
+
+<div class="viewcode-block" id="Estimate.get_bounds"><a class="viewcode-back" href="../index.html#estimate.Estimate.get_bounds">[docs]</a>    <span class="k">def</span> <span class="nf">get_bounds</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">constr</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Returns (lb, ub), where lb and ub are lists for the bounds.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c1"># Build specs: Ursu does not participate if directional, Kanes is in </span>
+        <span class="c1"># second position in coordinates dataframe if directional, third</span>
+        <span class="c1"># otherwise.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_type</span> <span class="o">==</span> <span class="s1">&#39;directional&#39;</span><span class="p">:</span>
+            <span class="n">constr</span> <span class="o">=</span> <span class="n">constr</span><span class="p">[</span><span class="n">constr</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span> <span class="o">!=</span> <span class="s1">&#39;ur01&#39;</span><span class="p">]</span>
+            <span class="n">kanes_loc</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">kanes_loc</span> <span class="o">=</span> <span class="mi">2</span>
+
+        <span class="k">if</span> <span class="n">full_vars</span><span class="p">:</span>
+            <span class="n">num_vars</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">3</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">num_vars</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">+</span> <span class="mi">2</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cities_unknown</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span>
+
+        <span class="n">lb</span> <span class="o">=</span> <span class="n">num_vars</span> <span class="o">*</span> <span class="p">[</span><span class="o">-</span><span class="mf">1.0e20</span><span class="p">]</span>
+        <span class="n">ub</span> <span class="o">=</span> <span class="n">num_vars</span> <span class="o">*</span> <span class="p">[</span><span class="mf">1.0e20</span><span class="p">]</span>
+
+        <span class="c1"># zeta should be larger than zero</span>
+        <span class="n">lb</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+
+        <span class="n">i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="n">full_vars</span><span class="p">]</span>
+
+        <span class="n">dit</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;long&#39;</span><span class="p">:(</span><span class="s1">&#39;varphi&#39;</span><span class="p">,</span> <span class="s1">&#39;long_x&#39;</span><span class="p">),</span> <span class="s1">&#39;lat&#39;</span><span class="p">:</span> <span class="p">(</span><span class="s1">&#39;lambda&#39;</span><span class="p">,</span> <span class="s1">&#39;lat_y&#39;</span><span class="p">)}</span>
+        <span class="k">if</span> <span class="n">full_vars</span><span class="p">:</span>
+            <span class="n">lb</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="n">ub</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">dit</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="c1"># Known locations are given</span>
+                <span class="n">lb</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="n">c</span><span class="o">+</span><span class="s1">&#39;_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="n">c</span><span class="o">+</span><span class="s1">&#39;_unknown_s&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_known</span><span class="p">[</span><span class="n">dit</span><span class="p">[</span><span class="n">c</span><span class="p">][</span><span class="mi">1</span><span class="p">]]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                <span class="n">ub</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="n">c</span><span class="o">+</span><span class="s1">&#39;_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="n">c</span><span class="o">+</span><span class="s1">&#39;_unknown_s&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_known</span><span class="p">[</span><span class="n">dit</span><span class="p">[</span><span class="n">c</span><span class="p">][</span><span class="mi">1</span><span class="p">]]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                <span class="c1"># Unknown location constraints</span>
+                <span class="n">lb</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="n">c</span><span class="o">+</span><span class="s1">&#39;_unknown_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="n">c</span><span class="o">+</span><span class="s1">&#39;_e&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">constr</span><span class="p">[</span><span class="s1">&#39;lb_&#39;</span><span class="o">+</span><span class="n">dit</span><span class="p">[</span><span class="n">c</span><span class="p">][</span><span class="mi">0</span><span class="p">]]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                <span class="n">ub</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="n">c</span><span class="o">+</span><span class="s1">&#39;_unknown_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="n">c</span><span class="o">+</span><span class="s1">&#39;_e&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">constr</span><span class="p">[</span><span class="s1">&#39;ub_&#39;</span><span class="o">+</span><span class="n">dit</span><span class="p">[</span><span class="n">c</span><span class="p">][</span><span class="mi">0</span><span class="p">]]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">dit</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="c1"># Unknown location constraints</span>
+                <span class="n">lb</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="n">c</span><span class="o">+</span><span class="s1">&#39;_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="n">c</span><span class="o">+</span><span class="s1">&#39;_e&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">constr</span><span class="p">[</span><span class="s1">&#39;lb_&#39;</span><span class="o">+</span><span class="n">dit</span><span class="p">[</span><span class="n">c</span><span class="p">][</span><span class="mi">0</span><span class="p">]]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+                <span class="n">ub</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="n">c</span><span class="o">+</span><span class="s1">&#39;_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="n">c</span><span class="o">+</span><span class="s1">&#39;_e&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">constr</span><span class="p">[</span><span class="s1">&#39;ub_&#39;</span><span class="o">+</span><span class="n">dit</span><span class="p">[</span><span class="n">c</span><span class="p">][</span><span class="mi">0</span><span class="p">]]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
+        <span class="n">lb</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;a_s&#39;</span><span class="p">]:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span> <span class="o">*</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">]</span>
+
+        <span class="c1"># Kanes&#39; alphas are normalized to 100</span>
+        <span class="n">lb</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;a_s&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">kanes_loc</span><span class="p">]</span> <span class="o">=</span> <span class="mf">100.0</span>
+        <span class="n">ub</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;a_s&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">kanes_loc</span><span class="p">]</span> <span class="o">=</span> <span class="mf">100.0</span>
+
+        <span class="k">return</span> <span class="p">(</span><span class="n">lb</span><span class="p">,</span> <span class="n">ub</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Estimate.initial_cond"><a class="viewcode-back" href="../index.html#estimate.Estimate.initial_cond">[docs]</a>    <span class="k">def</span> <span class="nf">initial_cond</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">len_sim</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">perturb</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="p">:</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        len_sim: int. Specifies the number of draws to take.</span>
+<span class="sd">        perturb: float. Specifies a percentage deviation from the default</span>
+<span class="sd">        initial value.</span>
+
+<span class="sd">        Returns default initial condition if perturb is not specified, and an</span>
+<span class="sd">        array of perturbed values of dimension (len_sim, numvars)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c1"># Form default initial value</span>
+        <span class="n">zeta</span> <span class="o">=</span> <span class="p">[</span><span class="mf">2.0</span><span class="p">]</span>
+        <span class="n">alphas</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">full_vars</span><span class="p">:</span>
+            <span class="c1"># add tilde_delta0</span>
+            <span class="n">zeta</span> <span class="o">=</span> <span class="n">zeta</span> <span class="o">+</span> <span class="p">[</span><span class="mf">2.0</span><span class="p">]</span>
+            <span class="n">lats</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="s1">&#39;lat_y&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+            <span class="n">longs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="s1">&#39;long_x&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lats</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_unknown</span><span class="p">[</span><span class="s1">&#39;lat_y&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+            <span class="n">longs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_unknown</span><span class="p">[</span><span class="s1">&#39;long_x&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+        <span class="n">x0</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">zeta</span><span class="p">,</span> <span class="n">longs</span><span class="p">,</span> <span class="n">lats</span><span class="p">,</span> <span class="n">alphas</span><span class="p">))</span>
+
+        <span class="c1"># Perturb it</span>
+        <span class="k">if</span> <span class="n">perturb</span> <span class="o">!=</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">x0</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span><span class="n">x0</span><span class="p">,</span> <span class="p">(</span><span class="n">len_sim</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+            <span class="n">p</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="n">perturb</span><span class="p">,</span> <span class="mi">1</span><span class="o">+</span><span class="n">perturb</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="n">len_sim</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+            <span class="n">x0</span> <span class="o">=</span> <span class="n">x0</span><span class="o">*</span><span class="n">p</span>
+
+        <span class="k">return</span> <span class="n">x0</span></div>
+
+
+<div class="viewcode-block" id="Estimate.solve"><a class="viewcode-back" href="../index.html#estimate.Estimate.solve">[docs]</a>    <span class="k">def</span> <span class="nf">solve</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x0</span><span class="p">,</span> <span class="n">constraint_type</span><span class="o">=</span><span class="s1">&#39;static&#39;</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        x0: list. It is the initial value.</span>
+<span class="sd">        constraint_type: str. One of &#39;static&#39; or &#39;dynamic&#39;.</span>
+<span class="sd">        Returns a one-row dataframe with optimization information.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c1"># Set bounds</span>
+        <span class="k">if</span> <span class="n">constraint_type</span> <span class="o">==</span> <span class="s1">&#39;static&#39;</span><span class="p">:</span>
+            <span class="n">constr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">replace_id_coord</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">df_constr_stat</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">constraint_type</span> <span class="o">==</span> <span class="s1">&#39;dynamic&#39;</span><span class="p">:</span>
+            <span class="n">constr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">replace_id_coord</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">df_constr_dyn</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Please specify the constraint type to be &quot;</span>
+                             <span class="o">+</span> <span class="s2">&quot;&#39;static&#39; or &#39;dynamic&#39;&quot;</span><span class="p">)</span>
+        <span class="n">bounds</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_bounds</span><span class="p">(</span><span class="n">constr</span><span class="p">,</span> <span class="n">full_vars</span><span class="p">)</span>
+
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">bounds</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">x0</span><span class="p">)</span>
+
+        <span class="n">nlp</span> <span class="o">=</span> <span class="n">ipopt</span><span class="o">.</span><span class="n">problem</span><span class="p">(</span> <span class="n">n</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">x0</span><span class="p">),</span>
+                             <span class="n">m</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                             <span class="n">problem_obj</span><span class="o">=</span><span class="n">Optimizer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">build_type</span><span class="p">),</span>
+                             <span class="n">lb</span><span class="o">=</span><span class="n">bounds</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                             <span class="n">ub</span><span class="o">=</span><span class="n">bounds</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="p">)</span>
+
+        <span class="c1"># Add IPOPT options (some jhwi options were default)</span>
+        <span class="n">option_specs</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;hessian_approximation&#39;</span><span class="p">:</span> <span class="s1">&#39;limited-memory&#39;</span><span class="p">,</span>
+                         <span class="s1">&#39;linear_solver&#39;</span><span class="p">:</span> <span class="s1">&#39;ma57&#39;</span><span class="p">,</span>
+                         <span class="s1">&#39;limited_memory_max_history&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span>
+                         <span class="s1">&#39;limited_memory_max_skipping&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                         <span class="s1">&#39;mu_strategy&#39;</span><span class="p">:</span> <span class="s1">&#39;adaptive&#39;</span><span class="p">,</span>
+                         <span class="s1">&#39;tol&#39;</span><span class="p">:</span> <span class="mf">1e-8</span><span class="p">,</span>
+                         <span class="s1">&#39;acceptable_tol&#39;</span><span class="p">:</span> <span class="mf">1e-7</span><span class="p">,</span>
+                         <span class="s1">&#39;acceptable_iter&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span>
+                         <span class="s1">&#39;max_iter&#39;</span><span class="p">:</span> <span class="mi">25000</span> <span class="p">}</span>
+        <span class="k">for</span> <span class="n">option</span> <span class="ow">in</span> <span class="n">option_specs</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">nlp</span><span class="o">.</span><span class="n">addOption</span><span class="p">(</span><span class="n">option</span><span class="p">,</span> <span class="n">option_specs</span><span class="p">[</span><span class="n">option</span><span class="p">])</span>
+
+        <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">info</span><span class="p">)</span> <span class="o">=</span> <span class="n">nlp</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">x0</span><span class="p">)</span>
+
+        <span class="c1"># Set up variable names</span>
+        <span class="n">alphas</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;</span><span class="si">{0}</span><span class="s1">_a&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span>
+        <span class="k">if</span> <span class="n">full_vars</span><span class="p">:</span>
+            <span class="n">longs</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;</span><span class="si">{0}</span><span class="s1">_lng&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span>
+            <span class="n">lats</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;</span><span class="si">{0}</span><span class="s1">_lat&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span>
+            <span class="n">headers</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;zeta&#39;</span><span class="p">,</span> <span class="s1">&#39;useless&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">longs</span> <span class="o">+</span> <span class="n">lats</span> <span class="o">+</span> <span class="n">alphas</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">longs</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;</span><span class="si">{0}</span><span class="s1">_lng&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_unknown</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span>
+            <span class="n">lats</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;</span><span class="si">{0}</span><span class="s1">_lat&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_unknown</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span>
+            <span class="n">headers</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;zeta&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">longs</span> <span class="o">+</span> <span class="n">lats</span> <span class="o">+</span> <span class="n">alphas</span>
+
+        <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="p">],</span>
+                          <span class="n">columns</span> <span class="o">=</span> <span class="n">headers</span><span class="p">)</span>
+        <span class="n">df</span><span class="p">[</span><span class="s1">&#39;obj_val&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">info</span><span class="p">[</span><span class="s1">&#39;obj_val&#39;</span><span class="p">]</span>
+        <span class="n">df</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">info</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span>
+        <span class="n">df</span><span class="p">[</span><span class="s1">&#39;status_msg&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">info</span><span class="p">[</span><span class="s1">&#39;status_msg&#39;</span><span class="p">]</span>
+        <span class="n">df</span><span class="p">[</span><span class="s1">&#39;status_msg&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;status_msg&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;;&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+
+        <span class="c1">#Add initial condition</span>
+        <span class="k">for</span> <span class="n">ival</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">x0</span><span class="p">)):</span>
+            <span class="n">df</span><span class="p">[</span><span class="s1">&#39;x0_&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">ival</span><span class="p">)]</span> <span class="o">=</span> <span class="n">x0</span><span class="p">[</span><span class="n">ival</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">df</span></div>
+
+
+<div class="viewcode-block" id="Estimate.gen_data"><a class="viewcode-back" href="../index.html#estimate.Estimate.gen_data">[docs]</a>    <span class="k">def</span> <span class="nf">gen_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">len_sim</span><span class="p">,</span> <span class="n">perturb</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        rank: int. Process number in parallelized computing.</span>
+<span class="sd">        Returns simulation dataframe sorted by objective value</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c1"># Get initial values</span>
+        <span class="n">x0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_cond</span><span class="p">(</span><span class="n">len_sim</span><span class="p">,</span> <span class="n">perturb</span><span class="p">,</span> <span class="n">full_vars</span><span class="p">)</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span> <span class="n">x0</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="p">:],</span> <span class="n">full_vars</span><span class="o">=</span><span class="n">full_vars</span> <span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">len_sim</span><span class="p">):</span>
+            <span class="n">i_val</span> <span class="o">=</span> <span class="n">x0</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="p">:]</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="bp">self</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">i_val</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="n">full_vars</span><span class="p">)</span> <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">rank</span> <span class="o">!=</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">data</span><span class="p">[</span><span class="s1">&#39;process&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">rank</span>
+
+        <span class="c1"># Sort</span>
+        <span class="k">return</span> <span class="n">data</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s1">&#39;obj_val&#39;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Estimate.get_best_result"><a class="viewcode-back" href="../index.html#estimate.Estimate.get_best_result">[docs]</a>    <span class="k">def</span> <span class="nf">get_best_result</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">results</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        results: pd.DataFrame. It is the output of the parallelized execution.</span>
+<span class="sd">        returns the row with minimum objective function value.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">results</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s1">&#39;obj_val&#39;</span><span class="p">)</span>
+
+        <span class="c1"># Discard results that are result in invalid numbers</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span> <span class="n">r</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">13</span><span class="p">,</span> <span class="p">:]</span>
+
+        <span class="k">return</span> <span class="n">r</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Estimate.resolve"><a class="viewcode-back" href="../index.html#estimate.Estimate.resolve">[docs]</a>    <span class="k">def</span> <span class="nf">resolve</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">result</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        result: pd.DataFrame. Output of self.get_best_result</span>
+
+<span class="sd">        Recursively digs into the coordinates results if the maximum number of</span>
+<span class="sd">        iterations was reached. Otherwise it returns the best solution.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">result</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="n">names</span> <span class="o">=</span> <span class="p">([</span><span class="s1">&#39;zeta&#39;</span><span class="p">]</span>
+                <span class="o">+</span> <span class="p">[</span><span class="s1">&#39;</span><span class="si">{0}</span><span class="s1">_lng&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_unknown</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span>
+                <span class="o">+</span> <span class="p">[</span><span class="s1">&#39;</span><span class="si">{0}</span><span class="s1">_lat&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_unknown</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span>
+                <span class="o">+</span> <span class="p">[</span><span class="s1">&#39;</span><span class="si">{0}</span><span class="s1">_a&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()]</span>
+                <span class="p">)</span>
+            <span class="n">init_val</span> <span class="o">=</span> <span class="n">result</span><span class="p">[</span><span class="n">names</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">init_val</span><span class="p">))</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="Estimate.full_to_short_i"><a class="viewcode-back" href="../index.html#estimate.Estimate.full_to_short_i">[docs]</a>    <span class="k">def</span> <span class="nf">full_to_short_i</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        returns the indices to select short varlist from full varlist</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="kc">True</span><span class="p">]</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(([</span><span class="mi">0</span><span class="p">],</span>
+                              <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_unknown_s&#39;</span><span class="p">],</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_e&#39;</span><span class="p">]),</span>
+                              <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_unknown_s&#39;</span><span class="p">],</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_e&#39;</span><span class="p">]),</span>
+                              <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;a_s&#39;</span><span class="p">],</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;a_e&#39;</span><span class="p">]))</span>
+                            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">res</span></div>
+
+
+<div class="viewcode-block" id="Estimate.output_to_jhwi"><a class="viewcode-back" href="../index.html#estimate.Estimate.output_to_jhwi">[docs]</a>    <span class="k">def</span> <span class="nf">output_to_jhwi</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Returns the initial value to evaluate the MATLAB objective function.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">varlist</span> <span class="o">=</span> <span class="n">output_to_varlist</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+        <span class="c1"># Go from sigma to zeta</span>
+        <span class="n">varlist</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">varlist</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">/</span><span class="mi">2</span>
+        <span class="c1"># add useless parameter = 4 in index 1.</span>
+        <span class="n">varlist</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">varlist</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+        <span class="c1"># Insert known coordinates. TEST THIS</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="kc">False</span><span class="p">]</span>
+        <span class="n">varlist</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">varlist</span><span class="p">,</span>
+                            <span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_s&#39;</span><span class="p">]</span><span class="o">+</span><span class="mi">2</span><span class="p">,</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">df_known</span><span class="p">[</span><span class="s1">&#39;lat_y&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+
+        <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">varlist</span><span class="p">)</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s1">&#39;input_to_jhwi.csv&#39;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Estimate.get_variance_gmm"><a class="viewcode-back" href="../index.html#estimate.Estimate.get_variance_gmm">[docs]</a>    <span class="k">def</span> <span class="nf">get_variance_gmm</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">varlist</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Computes the variance-covariance matrix of the estimators according to</span>
+<span class="sd">        the GMM formula. (see notes.pdf)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_errors</span><span class="p">(</span><span class="n">varlist</span><span class="p">,</span> <span class="n">full_vars</span><span class="p">)</span>
+
+        <span class="c1"># Make column vector</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">expand_dims</span><span class="p">(</span><span class="n">errors</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Evaluate errors jacobian at estimated parameter.</span>
+        <span class="n">jac</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jac_errors</span><span class="p">(</span><span class="n">varlist</span><span class="p">)</span>
+
+        <span class="c1"># Remove Kanes&#39; a, since it is fixed.</span>
+        <span class="n">kanes_i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="n">full_vars</span><span class="p">][</span><span class="s1">&#39;a_s&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">jac</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">jac</span><span class="p">,</span> <span class="n">kanes_i</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1">#assert np.shape(jac) == (650, 48)</span>
+
+        <span class="c1"># Build variance-covariance matrix</span>
+        <span class="n">bread_top</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="n">jac</span><span class="p">),</span> <span class="n">jac</span><span class="p">))</span>
+        <span class="n">ham</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">multi_dot</span><span class="p">((</span><span class="n">np</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="n">jac</span><span class="p">),</span>
+                                   <span class="n">errors</span><span class="p">,</span>
+                                   <span class="n">np</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="n">errors</span><span class="p">),</span>
+                                   <span class="n">jac</span><span class="p">))</span>
+        <span class="n">bread_bottom</span> <span class="o">=</span> <span class="n">bread_top</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">multi_dot</span><span class="p">((</span><span class="n">bread_top</span><span class="p">,</span> <span class="n">ham</span><span class="p">,</span> <span class="n">bread_bottom</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="Estimate.get_variance"><a class="viewcode-back" href="../index.html#estimate.Estimate.get_variance">[docs]</a>    <span class="k">def</span> <span class="nf">get_variance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">varlist</span><span class="p">,</span> <span class="n">var_type</span><span class="o">=</span><span class="s1">&#39;white&#39;</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Computes the variance-covariance matrix of the estimators according to</span>
+<span class="sd">        the white formula. (see paper)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_errors</span><span class="p">(</span><span class="n">varlist</span><span class="p">,</span> <span class="n">full_vars</span><span class="p">)</span>
+
+        <span class="c1"># Make column vector</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">expand_dims</span><span class="p">(</span><span class="n">errors</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">full_vars</span><span class="p">:</span>
+            <span class="n">i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="kc">True</span><span class="p">]</span>
+            <span class="n">jac</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jac_errors_full_vars</span><span class="p">(</span><span class="n">varlist</span><span class="p">)</span>
+            <span class="n">jac</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">jac</span><span class="p">)</span>
+            <span class="n">jac</span> <span class="o">=</span> <span class="n">jac</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span> <span class="o">=</span> <span class="p">([</span><span class="mi">1</span><span class="p">]</span>
+                           <span class="o">+</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_s&#39;</span><span class="p">],</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_unknown_s&#39;</span><span class="p">])</span>
+                           <span class="o">+</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_s&#39;</span><span class="p">],</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_unknown_s&#39;</span><span class="p">])))</span>
+            <span class="n">jac</span> <span class="o">=</span> <span class="n">jac</span><span class="o">.</span><span class="n">values</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Evaluate errors jacobian at estimated parameter.</span>
+            <span class="n">jac</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jac_errors</span><span class="p">(</span><span class="n">varlist</span><span class="p">)</span>
+
+        <span class="c1"># Remove Kanes&#39; a, since it is fixed.</span>
+        <span class="n">kanes_i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="kc">False</span><span class="p">][</span><span class="s1">&#39;a_s&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">jac</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">jac</span><span class="p">,</span> <span class="n">kanes_i</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">bread</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span> <span class="n">np</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="n">jac</span><span class="p">),</span> <span class="n">jac</span> <span class="p">))</span>
+
+        <span class="c1"># Build variance-covariance matrix, according to var_type</span>
+        <span class="k">if</span> <span class="n">var_type</span> <span class="o">==</span> <span class="s1">&#39;white&#39;</span><span class="p">:</span>
+            <span class="n">ham</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="n">jac</span> <span class="o">*</span> <span class="n">errors</span><span class="p">),</span> <span class="n">jac</span> <span class="o">*</span> <span class="n">errors</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">multi_dot</span><span class="p">((</span><span class="n">bread</span><span class="p">,</span> <span class="n">ham</span><span class="p">,</span> <span class="n">bread</span><span class="p">))</span>
+
+        <span class="k">elif</span> <span class="n">var_type</span> <span class="o">==</span> <span class="s1">&#39;homo&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">errors</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">errors</span><span class="p">))</span> <span class="o">*</span> <span class="n">bread</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Please specify the variance type to be one of &quot;</span>
+                    <span class="o">+</span> <span class="s2">&quot;&#39;white&#39; or &#39;homo&#39;&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Estimate.simulate_contour_data"><a class="viewcode-back" href="../index.html#estimate.Estimate.simulate_contour_data">[docs]</a>    <span class="k">def</span> <span class="nf">simulate_contour_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                              <span class="n">varlist</span><span class="p">,</span>
+                              <span class="n">size</span><span class="o">=</span><span class="mi">20000</span><span class="p">,</span>
+                              <span class="n">var_type</span><span class="o">=</span><span class="s1">&#39;white&#39;</span><span class="p">,</span>
+                              <span class="n">full_vars</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        varlist is taken to be the point estimate vector.</span>
+
+<span class="sd">        Gets the var_type variance matrix using varlist and simulates size</span>
+<span class="sd">        draws from a normal distribution with mean varlist and variance.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">full_vars</span><span class="p">:</span>
+            <span class="n">mean</span> <span class="o">=</span> <span class="n">varlist</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">full_to_short_i</span><span class="p">()]</span>
+        <span class="c1"># Remove Kanes</span>
+        <span class="n">kanes_i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="kc">False</span><span class="p">][</span><span class="s1">&#39;a_s&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">mean</span><span class="p">,</span> <span class="n">kanes_i</span><span class="p">)</span>
+
+        <span class="n">cov</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_variance</span><span class="p">(</span><span class="n">varlist</span><span class="p">,</span>
+                                <span class="n">var_type</span><span class="o">=</span><span class="n">var_type</span><span class="p">,</span>
+                                <span class="n">full_vars</span><span class="o">=</span><span class="n">full_vars</span><span class="p">)</span>
+
+        <span class="n">sims</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">multivariate_normal</span><span class="p">(</span><span class="n">mean</span><span class="p">,</span> <span class="n">cov</span><span class="p">,</span> <span class="n">size</span><span class="p">)</span>
+
+        <span class="c1"># Select only unknown coordinates</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="kc">False</span><span class="p">]</span>
+        <span class="n">sims</span> <span class="o">=</span> <span class="n">sims</span><span class="p">[</span> <span class="p">:,</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_s&#39;</span><span class="p">],</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_e&#39;</span><span class="p">])</span>
+                        <span class="o">+</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_s&#39;</span><span class="p">],</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_e&#39;</span><span class="p">])</span> <span class="p">]</span>
+        <span class="n">mean</span> <span class="o">=</span> <span class="n">mean</span><span class="p">[</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_s&#39;</span><span class="p">],</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_e&#39;</span><span class="p">])</span>
+                     <span class="o">+</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_s&#39;</span><span class="p">],</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_e&#39;</span><span class="p">])</span> <span class="p">]</span>
+
+        <span class="c1"># add id_lng; id_lat headers</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_unknown</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="n">id_header</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="s1">&#39;_lng&#39;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="s1">&#39;_lat&#39;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">]</span>
+
+        <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span> <span class="n">sims</span><span class="p">,</span> <span class="n">columns</span> <span class="o">=</span> <span class="n">id_header</span> <span class="p">)</span>
+        <span class="n">df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s1">&#39;./estim_results/plot_data_&#39;</span> <span class="o">+</span> <span class="n">var_type</span> <span class="o">+</span> <span class="s1">&#39;.csv&#39;</span><span class="p">,</span>
+                  <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">df</span></div>
+
+
+<div class="viewcode-block" id="Estimate.get_size"><a class="viewcode-back" href="../index.html#estimate.Estimate.get_size">[docs]</a>    <span class="k">def</span> <span class="nf">get_size</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">zeta</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">distances</span><span class="p">,</span> <span class="n">scale_kanes</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="mf">4.0</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Returns the fundamental size of cities:</span>
+<span class="sd">            Size_i proportional to L_i T_i^(1/theta)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">factor_1</span> <span class="o">=</span> <span class="n">alpha</span><span class="o">**</span><span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="mf">1.0</span><span class="o">/</span><span class="n">theta</span><span class="p">)</span>
+
+        <span class="c1">## Build summation</span>
+        <span class="c1"># This part draws from self.s_ij_model()</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tile_nodiag</span><span class="p">(</span><span class="n">alpha</span><span class="p">)</span>
+        <span class="n">elems</span> <span class="o">=</span> <span class="n">a</span> <span class="o">*</span> <span class="p">(</span><span class="n">distances</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="n">zeta</span><span class="p">))</span>
+        <span class="n">elems</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">elems</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_cities</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="c1"># Add within-city component. Assumed within-city distance: 30 km.</span>
+        <span class="n">own_factor</span> <span class="o">=</span> <span class="p">(</span><span class="mi">30</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="n">zeta</span><span class="p">))</span> <span class="o">*</span> <span class="n">alpha</span>
+        <span class="n">factor_2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">elems</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span> <span class="o">+</span> <span class="n">own_factor</span>
+
+        <span class="n">sizes</span> <span class="o">=</span> <span class="n">factor_1</span> <span class="o">*</span> <span class="n">factor_2</span>
+        <span class="k">if</span> <span class="n">scale_kanes</span><span class="p">:</span>
+            <span class="n">sizes</span> <span class="o">=</span> <span class="mi">100</span> <span class="o">*</span> <span class="n">sizes</span> <span class="o">/</span> <span class="n">sizes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">sizes</span></div>
+
+
+<div class="viewcode-block" id="Estimate.get_size_variance"><a class="viewcode-back" href="../index.html#estimate.Estimate.get_size_variance">[docs]</a>    <span class="k">def</span> <span class="nf">get_size_variance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">varlist</span><span class="p">,</span> <span class="n">scale_kanes</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">var_type</span><span class="o">=</span><span class="s1">&#39;white&#39;</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Applies Delta Method to get the variance-covariance matrix of the city</span>
+<span class="sd">        size estimates.</span>
+
+<span class="sd">        Return the variance-covariance matrix of sizes.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">def</span> <span class="nf">size_for_grad</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
+            <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">            get_size function for autograd</span>
+<span class="sd">            It can standardize size (so Kanes = 100)</span>
+<span class="sd">            &#39;&#39;&#39;</span>
+            <span class="c1"># Unpack arguments</span>
+            <span class="n">zeta</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="kc">True</span><span class="p">]</span>
+            <span class="n">lng_guess</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_e&#39;</span><span class="p">]]</span>
+            <span class="n">lat_guess</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_e&#39;</span><span class="p">]]</span>
+            <span class="n">alpha</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;a_s&#39;</span><span class="p">]:]</span>
+            <span class="c1"># Get sizes</span>
+            <span class="n">sizes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_size</span><span class="p">(</span><span class="n">zeta</span><span class="p">,</span>
+                                  <span class="n">alpha</span><span class="p">,</span>
+                                  <span class="bp">self</span><span class="o">.</span><span class="n">fetch_dist</span><span class="p">(</span><span class="n">lat_guess</span><span class="p">,</span>
+                                                  <span class="n">lng_guess</span><span class="p">,</span>
+                                                  <span class="kc">True</span><span class="p">),</span>
+                                  <span class="n">scale_kanes</span><span class="o">=</span><span class="n">scale_kanes</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">sizes</span>
+
+        <span class="c1"># Get Jacobian</span>
+        <span class="n">jac_size</span> <span class="o">=</span> <span class="n">jacobian</span><span class="p">(</span><span class="n">size_for_grad</span><span class="p">)</span>
+        <span class="c1"># Evaluate</span>
+        <span class="n">j</span> <span class="o">=</span> <span class="n">jac_size</span><span class="p">(</span><span class="n">varlist</span><span class="p">)</span>
+
+        <span class="c1"># Remove variables that are fixed</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="kc">True</span><span class="p">]</span>
+        <span class="n">j</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">j</span><span class="p">)</span>
+        <span class="n">j</span> <span class="o">=</span> <span class="n">j</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span> <span class="o">=</span> <span class="p">([</span><span class="mi">1</span><span class="p">]</span>
+                       <span class="o">+</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_s&#39;</span><span class="p">],</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_unknown_s&#39;</span><span class="p">])</span>
+                       <span class="o">+</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_s&#39;</span><span class="p">],</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_unknown_s&#39;</span><span class="p">])))</span>
+        <span class="n">j</span> <span class="o">=</span> <span class="n">j</span><span class="o">.</span><span class="n">values</span>
+        <span class="c1">## Remove Kanes&#39; a, since it is fixed.</span>
+        <span class="n">kanes_i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="kc">False</span><span class="p">][</span><span class="s1">&#39;a_s&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">j</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="n">kanes_i</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">var</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_variance</span><span class="p">(</span><span class="n">varlist</span><span class="p">,</span> <span class="n">var_type</span><span class="o">=</span><span class="n">var_type</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">multi_dot</span><span class="p">((</span><span class="n">j</span><span class="p">,</span> <span class="n">var</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="n">j</span><span class="p">)))</span></div>
+
+
+<div class="viewcode-block" id="Estimate.export_results"><a class="viewcode-back" href="../index.html#estimate.Estimate.export_results">[docs]</a>    <span class="k">def</span> <span class="nf">export_results</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">varlist</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        varlist is in jhwi format:</span>
+<span class="sd">        (zeta, useless, long_known, long_unknown, lat_known, lat_unknown, a)</span>
+<span class="sd">        Exports zeta.csv, coordinates.csv, cities.csv, simulation.csv</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c1"># 1. Fetch standard error of estimates</span>
+        <span class="n">varlist_cov_white</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_variance</span><span class="p">(</span><span class="n">varlist</span><span class="p">,</span>
+                                              <span class="n">var_type</span><span class="o">=</span><span class="s1">&#39;white&#39;</span><span class="p">,</span>
+                                              <span class="n">full_vars</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">varlist_cov_homo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_variance</span><span class="p">(</span><span class="n">varlist</span><span class="p">,</span>
+                                             <span class="n">var_type</span><span class="o">=</span><span class="s1">&#39;homo&#39;</span><span class="p">,</span>
+                                             <span class="n">full_vars</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">size_cov_white</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_size_variance</span><span class="p">(</span><span class="n">varlist</span><span class="p">,</span> <span class="n">var_type</span><span class="o">=</span><span class="s1">&#39;white&#39;</span><span class="p">)</span>
+        <span class="n">size_cov_homo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_size_variance</span><span class="p">(</span><span class="n">varlist</span><span class="p">,</span> <span class="n">var_type</span><span class="o">=</span><span class="s1">&#39;homo&#39;</span><span class="p">)</span>
+
+        <span class="n">varlist_sd_white</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">varlist_cov_white</span><span class="p">)</span> <span class="p">)</span>
+        <span class="n">varlist_sd_homo</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">varlist_cov_homo</span><span class="p">)</span> <span class="p">)</span>
+        <span class="n">size_sd_white</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">size_cov_white</span><span class="p">)</span> <span class="p">)</span>
+        <span class="n">size_sd_homo</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">size_cov_homo</span><span class="p">)</span> <span class="p">)</span>
+
+        <span class="c1"># 2. Unpack varlist arguments</span>
+        <span class="n">zeta</span> <span class="o">=</span> <span class="n">varlist</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="kc">True</span><span class="p">]</span>
+        <span class="n">lng</span> <span class="o">=</span> <span class="n">varlist</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_e&#39;</span><span class="p">]]</span>
+        <span class="n">lng_estim</span> <span class="o">=</span> <span class="n">varlist</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_unknown_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;long_e&#39;</span><span class="p">]]</span>
+        <span class="n">lat</span> <span class="o">=</span> <span class="n">varlist</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_e&#39;</span><span class="p">]]</span>
+        <span class="n">lat_estim</span> <span class="o">=</span> <span class="n">varlist</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_unknown_s&#39;</span><span class="p">]:</span> <span class="n">i</span><span class="p">[</span><span class="s1">&#39;lat_e&#39;</span><span class="p">]]</span>
+        <span class="n">alpha</span> <span class="o">=</span> <span class="n">varlist</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;a_s&#39;</span><span class="p">]:]</span>
+
+        <span class="c1"># 3. Save zeta.csv</span>
+        <span class="n">df_zeta</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([[</span><span class="n">zeta</span><span class="p">,</span>
+                                 <span class="n">varlist_sd_white</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                                 <span class="n">varlist_sd_homo</span><span class="p">[</span><span class="mi">0</span><span class="p">]]],</span> <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;zeta&#39;</span><span class="p">,</span>
+                                                                <span class="s1">&#39;zeta_sd_white&#39;</span><span class="p">,</span>
+                                                                <span class="s1">&#39;zeta_sd_homo&#39;</span><span class="p">]</span>
+                              <span class="p">)</span>
+        <span class="n">df_zeta</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s1">&#39;./estim_results/zeta.csv&#39;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="c1"># 4. Save estimated coordinates + standard errors</span>
+        <span class="c1">## Unpack arguments</span>
+        <span class="n">j</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">div_indices</span><span class="p">[</span><span class="kc">False</span><span class="p">]</span>
+
+        <span class="n">lng_white</span> <span class="o">=</span> <span class="n">varlist_sd_white</span><span class="p">[</span><span class="n">j</span><span class="p">[</span><span class="s1">&#39;long_s&#39;</span><span class="p">]:</span> <span class="n">j</span><span class="p">[</span><span class="s1">&#39;long_e&#39;</span><span class="p">]]</span>
+        <span class="n">lng_homo</span> <span class="o">=</span> <span class="n">varlist_sd_homo</span><span class="p">[</span><span class="n">j</span><span class="p">[</span><span class="s1">&#39;long_s&#39;</span><span class="p">]:</span> <span class="n">j</span><span class="p">[</span><span class="s1">&#39;long_e&#39;</span><span class="p">]]</span>
+
+        <span class="n">lat_white</span> <span class="o">=</span> <span class="n">varlist_sd_white</span><span class="p">[</span><span class="n">j</span><span class="p">[</span><span class="s1">&#39;lat_s&#39;</span><span class="p">]:</span> <span class="n">j</span><span class="p">[</span><span class="s1">&#39;lat_e&#39;</span><span class="p">]]</span>
+        <span class="n">lat_homo</span> <span class="o">=</span> <span class="n">varlist_sd_homo</span><span class="p">[</span><span class="n">j</span><span class="p">[</span><span class="s1">&#39;lat_s&#39;</span><span class="p">]:</span> <span class="n">j</span><span class="p">[</span><span class="s1">&#39;lat_e&#39;</span><span class="p">]]</span>
+
+        <span class="c1">## Fetch IDs</span>
+        <span class="n">ids_coord</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_unknown</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+        <span class="n">coord_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">((</span><span class="n">ids_coord</span><span class="p">,</span>
+                                       <span class="n">lng_estim</span><span class="p">,</span>
+                                       <span class="n">lng_white</span><span class="p">,</span>
+                                       <span class="n">lng_homo</span><span class="p">,</span>
+                                       <span class="n">lat_estim</span><span class="p">,</span>
+                                       <span class="n">lat_white</span><span class="p">,</span>
+                                       <span class="n">lat_homo</span><span class="p">))</span>
+        <span class="n">coordinates</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span> <span class="n">coord_array</span><span class="p">,</span>
+                                    <span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">,</span>
+                                               <span class="s1">&#39;longitude&#39;</span><span class="p">,</span>
+                                               <span class="s1">&#39;longitude_sd_white&#39;</span><span class="p">,</span>
+                                               <span class="s1">&#39;longitude_sd_homo&#39;</span><span class="p">,</span>
+                                               <span class="s1">&#39;latitude&#39;</span><span class="p">,</span>
+                                               <span class="s1">&#39;latitude_sd_white&#39;</span><span class="p">,</span>
+                                               <span class="s1">&#39;latitude_sd_homo&#39;</span><span class="p">]</span>
+                                  <span class="p">)</span>
+        <span class="n">coordinates</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s1">&#39;./estim_results/coordinates.csv&#39;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="c1"># 5. Save sizes and alphas (+ standard errors)</span>
+        <span class="n">distances</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fetch_dist</span><span class="p">(</span><span class="n">lat</span><span class="p">,</span> <span class="n">lng</span><span class="p">,</span> <span class="n">full_vars</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_size</span><span class="p">(</span><span class="n">zeta</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">distances</span><span class="p">)</span>
+
+        <span class="n">alpha</span> <span class="o">=</span> <span class="n">varlist</span><span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="s1">&#39;a_s&#39;</span><span class="p">]:]</span>
+        <span class="n">alpha_white</span> <span class="o">=</span> <span class="n">varlist_sd_white</span><span class="p">[</span><span class="n">j</span><span class="p">[</span><span class="s1">&#39;a_s&#39;</span><span class="p">]:]</span>
+        <span class="n">alpha_homo</span> <span class="o">=</span> <span class="n">varlist_sd_white</span><span class="p">[</span><span class="n">j</span><span class="p">[</span><span class="s1">&#39;a_s&#39;</span><span class="p">]:]</span>
+
+        <span class="c1">## Insert missing s.e. for kanes in alpha and in sizes</span>
+        <span class="n">alpha_white</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">alpha_white</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+        <span class="n">alpha_homo</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">alpha_homo</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">)</span>
+        <span class="c1">## These entries would otherwise be zero</span>
+        <span class="n">size_sd_white</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+        <span class="n">size_sd_homo</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+
+        <span class="n">ids_city</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">df_coordinates</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+        <span class="n">city_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">((</span><span class="n">ids_city</span><span class="p">,</span>
+                                      <span class="n">size</span><span class="p">,</span>
+                                      <span class="n">size_sd_white</span><span class="p">,</span>
+                                      <span class="n">size_sd_homo</span><span class="p">,</span>
+                                      <span class="n">alpha</span><span class="p">,</span>
+                                      <span class="n">alpha_white</span><span class="p">,</span>
+                                      <span class="n">alpha_homo</span><span class="p">))</span>
+        <span class="n">cities</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span> <span class="n">city_array</span><span class="p">,</span>
+                               <span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;size&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;size_sd_white&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;size_sd_homo&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;alpha&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;alpha_sd_white&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;alpha_sd_homo&#39;</span><span class="p">]</span>
+                             <span class="p">)</span>
+        <span class="n">cities</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s1">&#39;./estim_results/cities.csv&#39;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="c1"># 6. Generate and store contour data, white and homo</span>
+        <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;white&#39;</span><span class="p">,</span> <span class="s1">&#39;homo&#39;</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">simulate_contour_data</span><span class="p">(</span><span class="n">varlist</span><span class="p">,</span>
+                                       <span class="n">var_type</span><span class="o">=</span><span class="n">v</span><span class="p">,</span>
+                                       <span class="n">full_vars</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div></div>
+
+
+
+
+
+
+
+<span class="c1"># Now define optimization problem for IPOPT</span>
+<span class="k">class</span> <span class="nc">Optimizer</span><span class="p">(</span><span class="n">Estimate</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">build_type</span><span class="p">):</span>
+        <span class="n">Estimate</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">build_type</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">objective</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">varlist</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">sqerr_sum</span><span class="p">(</span><span class="n">varlist</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">gradient</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">varlist</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">grad</span><span class="p">(</span><span class="n">varlist</span><span class="p">)</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../index.html">Assyria</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation overview</a><ul>
+  <li><a href="index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2017, Hortacsu.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.6.3</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.10</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
