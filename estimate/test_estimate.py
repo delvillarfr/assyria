@@ -51,11 +51,11 @@ def test_same_constraints_after_coord_replace_directional_dir():
 
 def test_same_distances_with_haversine_approx_and_euclidean_dist():
     e = estimate.Estimate('directional')
-    coords = pd.read_csv('./matlab_tests/data/coords_sample.csv')
+    coords = pd.read_csv('./tests/data/coords_sample.csv')
     dist_mine = e.haversine_approx(coords[['lati', 'longi']].values,
                                    coords[['latj', 'longj']].values)
 
-    dist_jhwi = pd.read_csv('./matlab_tests/data/distances_sample.csv')
+    dist_jhwi = pd.read_csv('./tests/data/distances_sample.csv')
 
     np.testing.assert_array_almost_equal(dist_jhwi.values,
                                          dist_mine.reshape((500,1)),
@@ -64,11 +64,11 @@ def test_same_distances_with_haversine_approx_and_euclidean_dist():
 
 def test_same_distances_with_haversine_approx_and_euclidean_dist_sq():
     e = estimate.Estimate('directional')
-    coords = pd.read_csv('./matlab_tests/data/coords_sample.csv')
+    coords = pd.read_csv('./tests/data/coords_sample.csv')
     dist_mine = (e.haversine_approx(coords[['lati', 'longi']].values,
                                     coords[['latj', 'longj']].values))**2
 
-    dist_jhwi = pd.read_csv('./matlab_tests/data/distances_sq_sample.csv')
+    dist_jhwi = pd.read_csv('./tests/data/distances_sq_sample.csv')
 
     np.testing.assert_array_almost_equal(dist_jhwi.values,
                                          dist_mine.reshape((500,1)),
@@ -77,9 +77,9 @@ def test_same_distances_with_haversine_approx_and_euclidean_dist_sq():
 
 def test_coordinate_pairs_match_those_of_their_corresponding_iticount_entry_dir():
     e = estimate.Estimate('directional')
-    lats = pd.read_csv('./matlab_tests/data/lats_rand_dir.csv')
+    lats = pd.read_csv('./tests/data/lats_rand_dir.csv')
     lats = lats.iloc[0, :].values
-    longs = pd.read_csv('./matlab_tests/data/longs_rand_dir.csv')
+    longs = pd.read_csv('./tests/data/longs_rand_dir.csv')
     longs = longs.iloc[0, :].values
 
     e.df_unknown['lat_y'] = lats
@@ -109,9 +109,9 @@ def test_coordinate_pairs_match_those_of_their_corresponding_iticount_entry_dir(
 
 def test_coordinate_pairs_match_those_of_their_corresponding_iticount_entry_nondir():
     e = estimate.Estimate('non_directional')
-    lats = pd.read_csv('./matlab_tests/data/lats_rand_nondir.csv')
+    lats = pd.read_csv('./tests/data/lats_rand_nondir.csv')
     lats = lats.iloc[0, :].values
-    longs = pd.read_csv('./matlab_tests/data/longs_rand_nondir.csv')
+    longs = pd.read_csv('./tests/data/longs_rand_nondir.csv')
     longs = longs.iloc[0, :].values
 
     e.df_unknown['lat_y'] = lats
@@ -144,13 +144,13 @@ def test_same_fetched_distances_dir():
     zeta = 2
     #alpha has 26 entries, the num of cities.
     alpha = np.ones(26)
-    lats = pd.read_csv('./matlab_tests/data/lats_rand_dir.csv')
+    lats = pd.read_csv('./tests/data/lats_rand_dir.csv')
     lats = lats.iloc[0, :].values
-    longs = pd.read_csv('./matlab_tests/data/longs_rand_dir.csv')
+    longs = pd.read_csv('./tests/data/longs_rand_dir.csv')
     longs = longs.iloc[0, :].values
 
     distances_mine = e.fetch_dist(lats, longs).reshape((650,1))
-    distances_jhwi = pd.read_csv('./matlab_tests/data/distances_rand_dir.csv')
+    distances_jhwi = pd.read_csv('./tests/data/distances_rand_dir.csv')
     np.testing.assert_array_almost_equal(distances_mine,
                                          np.sqrt(distances_jhwi),
                                          decimal=accuracy)
@@ -161,13 +161,13 @@ def test_same_fetched_distances_nondir():
     zeta = 2
     #alpha has 26 entries, the num of cities.
     alpha = np.ones(26)
-    lats = pd.read_csv('./matlab_tests/data/lats_rand_nondir.csv')
+    lats = pd.read_csv('./tests/data/lats_rand_nondir.csv')
     lats = lats.iloc[0, :].values
-    longs = pd.read_csv('./matlab_tests/data/longs_rand_nondir.csv')
+    longs = pd.read_csv('./tests/data/longs_rand_nondir.csv')
     longs = longs.iloc[0, :].values
 
     distances_mine = e.fetch_dist(lats, longs).reshape((756,1))
-    distances_jhwi = pd.read_csv('./matlab_tests/data/distances_rand_nondir.csv')
+    distances_jhwi = pd.read_csv('./tests/data/distances_rand_nondir.csv')
     np.testing.assert_array_almost_equal(distances_mine,
                                          np.sqrt(distances_jhwi),
                                          decimal=accuracy)
@@ -178,15 +178,15 @@ def test_same_s_ij_model_directional_dir():
     zeta = 2
     #alpha has 26 entries, the num of cities.
     alpha = np.ones(26)
-    lats = pd.read_csv('./matlab_tests/data/lats_rand_dir.csv')
+    lats = pd.read_csv('./tests/data/lats_rand_dir.csv')
     lats = lats.iloc[0, :].values
-    longs = pd.read_csv('./matlab_tests/data/longs_rand_dir.csv')
+    longs = pd.read_csv('./tests/data/longs_rand_dir.csv')
     longs = longs.iloc[0, :].values
 
     dists = e.fetch_dist(lats, longs)
 
     sij_mine = e.s_ij_model(zeta, alpha, dists).reshape((650, 1))
-    sij_jhwi = pd.read_csv('./matlab_tests/data/sij_rand_dir.csv')
+    sij_jhwi = pd.read_csv('./tests/data/sij_rand_dir.csv')
     np.testing.assert_array_almost_equal(sij_mine,
                                          sij_jhwi,
                                          decimal=accuracy)
@@ -197,15 +197,15 @@ def test_same_s_ij_model_directional_nondir():
     zeta = 2
     #alpha has 28 entries, the num of cities.
     alpha = np.ones(28)
-    lats = pd.read_csv('./matlab_tests/data/lats_rand_nondir.csv')
+    lats = pd.read_csv('./tests/data/lats_rand_nondir.csv')
     lats = lats.iloc[0, :].values
-    longs = pd.read_csv('./matlab_tests/data/longs_rand_nondir.csv')
+    longs = pd.read_csv('./tests/data/longs_rand_nondir.csv')
     longs = longs.iloc[0, :].values
 
     dists = e.fetch_dist(lats, longs)
 
     sij_mine = e.s_ij_model(zeta, alpha, dists).reshape((756, 1))
-    sij_jhwi = pd.read_csv('./matlab_tests/data/sij_rand_nondir.csv')
+    sij_jhwi = pd.read_csv('./tests/data/sij_rand_nondir.csv')
     np.testing.assert_array_almost_equal(sij_mine,
                                          sij_jhwi,
                                          decimal=accuracy)
@@ -229,7 +229,7 @@ def test_full_to_short_varlist():
     np.testing.assert_array_equal(input_short,
                                   input_short_mine)
     ## In case you are still not convinced: manual check.
-    #inputs = pd.read_csv('./matlab_tests/data/inputs_dir.csv')
+    #inputs = pd.read_csv('./tests/data/inputs_dir.csv')
     #i = inputs.iloc[0, :].values
     #input_s = i[e.full_to_short_i()]
     #pd.DataFrame(input_s).to_csv('row1.csv')
@@ -237,7 +237,7 @@ def test_full_to_short_varlist():
 
 def test_error_equivalence_full_vars_vs_few_vars():
     e = estimate.Estimate('directional')
-    inputs = pd.read_csv('./matlab_tests/data/inputs_full_vs_few.csv',
+    inputs = pd.read_csv('./tests/data/inputs_full_vs_few.csv',
             header=None)
     errors = np.empty((1001, 650))
     errors_full = np.empty((1001, 650))
@@ -255,7 +255,7 @@ def test_same_bounds_to_ipopt_dir_static():
     e = estimate.Estimate('directional')
     bounds = e.get_bounds(e.replace_id_coord(e.df_constr_stat), full_vars=True)
 
-    bounds_jhwi = pd.read_csv('./matlab_tests/data/bounds_dir_stat.csv')
+    bounds_jhwi = pd.read_csv('./tests/data/bounds_dir_stat.csv')
     bounds_jhwi = bounds_jhwi.replace(np.inf, 1.0e20)
 
     np.testing.assert_array_almost_equal(np.array(bounds[0]),
@@ -270,7 +270,7 @@ def test_same_bounds_to_ipopt_nondir_static():
     e = estimate.Estimate('non_directional')
     bounds = e.get_bounds(e.replace_id_coord(e.df_constr_stat), full_vars=True)
 
-    bounds_jhwi = pd.read_csv('./matlab_tests/data/bounds_nondir_stat.csv')
+    bounds_jhwi = pd.read_csv('./tests/data/bounds_nondir_stat.csv')
     bounds_jhwi = bounds_jhwi.replace(np.inf, 1.0e20)
 
     np.testing.assert_array_almost_equal(np.array(bounds[0]),
@@ -286,7 +286,7 @@ def test_same_initial_condition_dir():
     theta0_mine = e.initial_cond(full_vars=True)
     # zeta is one half sigma
     theta0_mine[0] = theta0_mine[0]/2
-    theta0_jhwi = pd.read_csv('./matlab_tests/data/theta0_dir.csv')
+    theta0_jhwi = pd.read_csv('./tests/data/theta0_dir.csv')
     np.testing.assert_array_almost_equal(theta0_mine,
                                          theta0_jhwi.values.flatten(),
                                          decimal=accuracy)
@@ -297,7 +297,7 @@ def test_same_initial_condition_nondir():
     theta0_mine = e.initial_cond(full_vars=True)
     # zeta is one half sigma
     theta0_mine[0] = theta0_mine[0]/2
-    theta0_jhwi = pd.read_csv('./matlab_tests/data/theta0_nondir.csv')
+    theta0_jhwi = pd.read_csv('./tests/data/theta0_nondir.csv')
     np.testing.assert_array_almost_equal(theta0_mine,
                                          theta0_jhwi.values.flatten(),
                                          decimal=accuracy)
@@ -308,8 +308,8 @@ def test_same_sqerr_sum_dir():
     zeta = [2]
     #alpha has 26 entries, the num of cities.
     alpha = np.ones(26).tolist()
-    lats = pd.read_csv('./matlab_tests/data/lats_rand_dir.csv')
-    longs = pd.read_csv('./matlab_tests/data/longs_rand_dir.csv')
+    lats = pd.read_csv('./tests/data/lats_rand_dir.csv')
+    longs = pd.read_csv('./tests/data/longs_rand_dir.csv')
 
     sqerr_mine = np.ones((100, 1))
     for i in range(100):
@@ -317,7 +317,7 @@ def test_same_sqerr_sum_dir():
         lng_guess = longs.iloc[i, :].tolist()
         sqerr_mine[i] = e.sqerr_sum(zeta + lng_guess + lat_guess + alpha)
 
-    sqerr_jhwi = pd.read_csv('./matlab_tests/data/sqerr_rand_dir.csv').values
+    sqerr_jhwi = pd.read_csv('./tests/data/sqerr_rand_dir.csv').values
     np.testing.assert_array_almost_equal(sqerr_mine,
                                          sqerr_jhwi,
                                          decimal=accuracy)
@@ -328,8 +328,8 @@ def test_same_sqerr_sum_nondir():
     zeta = [2]
     #alpha has 28 entries, the num of cities.
     alpha = np.ones(28).tolist()
-    lats = pd.read_csv('./matlab_tests/data/lats_rand_nondir.csv')
-    longs = pd.read_csv('./matlab_tests/data/longs_rand_nondir.csv')
+    lats = pd.read_csv('./tests/data/lats_rand_nondir.csv')
+    longs = pd.read_csv('./tests/data/longs_rand_nondir.csv')
 
     sqerr_mine = np.ones((100, 1))
     for i in range(100):
@@ -337,7 +337,7 @@ def test_same_sqerr_sum_nondir():
         lng_guess = longs.iloc[i, :].tolist()
         sqerr_mine[i] = e.sqerr_sum(zeta + lng_guess + lat_guess + alpha)
 
-    sqerr_jhwi = pd.read_csv('./matlab_tests/data/sqerr_rand_nondir.csv').values
+    sqerr_jhwi = pd.read_csv('./tests/data/sqerr_rand_nondir.csv').values
     np.testing.assert_array_almost_equal(sqerr_mine,
                                          sqerr_jhwi,
                                          decimal=accuracy)
@@ -349,8 +349,8 @@ def test_same_sqerr_sum_full_vars_dir():
     zeta = [2, 2]
     #alpha has 26 entries, the num of cities.
     alpha = np.ones(26).tolist()
-    lats = pd.read_csv('./matlab_tests/data/lats_rand_dir.csv')
-    longs = pd.read_csv('./matlab_tests/data/longs_rand_dir.csv')
+    lats = pd.read_csv('./tests/data/lats_rand_dir.csv')
+    longs = pd.read_csv('./tests/data/longs_rand_dir.csv')
 
     lats_known = e.df_known['lat_y'].values
     lats_known = pd.DataFrame(np.tile(lats_known, (100, 1)))
@@ -367,7 +367,7 @@ def test_same_sqerr_sum_full_vars_dir():
         sqerr_mine[i] = e.sqerr_sum(zeta + lng_guess + lat_guess + alpha,
                                    full_vars=True)
 
-    sqerr_jhwi = pd.read_csv('./matlab_tests/data/sqerr_rand_dir.csv').values
+    sqerr_jhwi = pd.read_csv('./tests/data/sqerr_rand_dir.csv').values
     np.testing.assert_array_almost_equal(sqerr_mine,
                                          sqerr_jhwi,
                                          decimal=accuracy)
@@ -379,8 +379,8 @@ def test_same_sqerr_sum_full_vars_nondir():
     zeta = [2, 2]
     #alpha has 26 entries, the num of cities.
     alpha = np.ones(28).tolist()
-    lats = pd.read_csv('./matlab_tests/data/lats_rand_nondir.csv')
-    longs = pd.read_csv('./matlab_tests/data/longs_rand_nondir.csv')
+    lats = pd.read_csv('./tests/data/lats_rand_nondir.csv')
+    longs = pd.read_csv('./tests/data/longs_rand_nondir.csv')
 
     lats_known = e.df_known['lat_y'].values
     lats_known = pd.DataFrame(np.tile(lats_known, (100, 1)))
@@ -397,7 +397,7 @@ def test_same_sqerr_sum_full_vars_nondir():
         sqerr_mine[i] = e.sqerr_sum(zeta + lng_guess + lat_guess + alpha,
                                    full_vars=True)
 
-    sqerr_jhwi = pd.read_csv('./matlab_tests/data/sqerr_rand_nondir.csv').values
+    sqerr_jhwi = pd.read_csv('./tests/data/sqerr_rand_nondir.csv').values
     np.testing.assert_array_almost_equal(sqerr_mine,
                                          sqerr_jhwi,
                                          decimal=accuracy)
@@ -408,7 +408,7 @@ def test_same_gradients_at_initial_coords_dir():
     varlist = e.initial_cond(full_vars=True)
     grad_mine = e.grad_full_vars(varlist)
 
-    grad_jhwi = pd.read_csv('./matlab_tests/data/gradient0_dir.csv')
+    grad_jhwi = pd.read_csv('./tests/data/gradient0_dir.csv')
     grad_jhwi = grad_jhwi.values.flatten()
 
     # sigma is one half zeta
@@ -424,7 +424,7 @@ def test_same_gradients_at_initial_coords_nondir():
     varlist = e.initial_cond(full_vars=True)
     grad_mine = e.grad_full_vars(varlist)
 
-    grad_jhwi = pd.read_csv('./matlab_tests/data/gradient0_nondir.csv')
+    grad_jhwi = pd.read_csv('./tests/data/gradient0_nondir.csv')
     grad_jhwi = grad_jhwi.values.flatten()
 
     # sigma is one half zeta
@@ -437,7 +437,7 @@ def test_same_gradients_at_initial_coords_nondir():
 
 def test_many_inputs_grad_and_objective_dir():
     e = estimate.Estimate('directional')
-    inputs = pd.read_csv('./matlab_tests/data/inputs_dir.csv')
+    inputs = pd.read_csv('./tests/data/inputs_dir.csv')
     # Sigma to zeta
     inputs.iloc[:, 0] = inputs.iloc[:, 0]*2
     grads_mine = np.empty((1000, 80))
@@ -447,8 +447,8 @@ def test_many_inputs_grad_and_objective_dir():
         obj_mine[i] = e.sqerr_sum(inp, full_vars = True)
         grads_mine[i, :] = e.grad_full_vars(inp)
 
-    obj_jhwi = pd.read_csv('./matlab_tests/data/inputs_objective_dir.csv').values
-    grads_jhwi = pd.read_csv('./matlab_tests/data/inputs_gradients_dir.csv').values
+    obj_jhwi = pd.read_csv('./tests/data/inputs_objective_dir.csv').values
+    grads_jhwi = pd.read_csv('./tests/data/inputs_gradients_dir.csv').values
     grads_jhwi[:, 0] = grads_jhwi[:, 0]/2
     np.testing.assert_array_almost_equal(obj_mine,
                                          obj_jhwi,
@@ -460,7 +460,7 @@ def test_many_inputs_grad_and_objective_dir():
 
 def test_many_inputs_grad_and_objective_nondir():
     e = estimate.Estimate('non_directional')
-    inputs = pd.read_csv('./matlab_tests/data/inputs_nondir.csv')
+    inputs = pd.read_csv('./tests/data/inputs_nondir.csv')
     # Sigma to zeta
     inputs.iloc[:, 0] = inputs.iloc[:, 0]*2
     grads_mine = np.empty((1000, 86))
@@ -470,8 +470,8 @@ def test_many_inputs_grad_and_objective_nondir():
         obj_mine[i] = e.sqerr_sum(inp, full_vars = True)
         grads_mine[i, :] = e.grad_full_vars(inp)
 
-    obj_jhwi = pd.read_csv('./matlab_tests/data/inputs_objective_nondir.csv').values
-    grads_jhwi = pd.read_csv('./matlab_tests/data/inputs_gradients_nondir.csv').values
+    obj_jhwi = pd.read_csv('./tests/data/inputs_objective_nondir.csv').values
+    grads_jhwi = pd.read_csv('./tests/data/inputs_gradients_nondir.csv').values
     grads_jhwi[:, 0] = grads_jhwi[:, 0]/2
 
     np.testing.assert_array_almost_equal(obj_mine,
@@ -484,7 +484,7 @@ def test_many_inputs_grad_and_objective_nondir():
 
 def test_same_objective_at_optimal_point():
     e = estimate.Estimate('directional')
-    theta = pd.read_csv('./matlab_tests/data/theta_firststage_plot.csv',
+    theta = pd.read_csv('./tests/data/theta_firststage_plot.csv',
                         header=None)
     theta = theta.values.flatten()
     # sigma to zeta
@@ -494,7 +494,7 @@ def test_same_objective_at_optimal_point():
     grad_mine = e.grad_full_vars(theta)
     grad_mine[0] = grad_mine[0]*2
 
-    vals_jhwi = pd.read_csv('./matlab_tests/data/result_obj_grad_dir.csv')
+    vals_jhwi = pd.read_csv('./tests/data/result_obj_grad_dir.csv')
     obj_jhwi = vals_jhwi.iat[0, 0]
     grad_jhwi = vals_jhwi.drop('obj', axis=1).values.flatten()
 
@@ -530,7 +530,7 @@ def gen_test_inputs(l=1000, full_vars=False, directional=True):
 
 def test_same_errors():
     e = estimate.Estimate('directional')
-    inputs = pd.read_csv('./matlab_tests/data/inputs_dir.csv')
+    inputs = pd.read_csv('./tests/data/inputs_dir.csv')
     # Sigma to zeta
     inputs.iloc[:, 0] = inputs.iloc[:, 0]*2
     errors_mine = np.empty((1000, 650))
@@ -538,7 +538,7 @@ def test_same_errors():
         inp = inputs.iloc[i, :].values
         errors_mine[i, :] = e.get_errors(inp, full_vars=True)
 
-    errors_jhwi = pd.read_csv('./matlab_tests/data/inputs_errors_dir.csv').values
+    errors_jhwi = pd.read_csv('./tests/data/inputs_errors_dir.csv').values
     #errors_jhwi[:, 0] = errors_jhwi[:, 0]/2
     np.testing.assert_array_almost_equal(errors_mine,
                                          errors_jhwi,
@@ -547,7 +547,7 @@ def test_same_errors():
 
 #def test_same_error_jacobian_few_vars():
 #    e = estimate.Estimate('directional')
-#    results = (pd.read_csv('./matlab_tests/data/theta_firststage_plot.csv',
+#    results = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
 #                           header=None)
 #                 .values
 #                 .flatten()
@@ -560,7 +560,7 @@ def test_same_errors():
 #
 #    jac_mine = e.jac_errors(inp)
 #
-#    jac_jhwi = pd.read_csv('./matlab_tests/data/jacobian_errors_full.csv',
+#    jac_jhwi = pd.read_csv('./tests/data/jacobian_errors_full.csv',
 #                           header=None).values
 #    # first column must be twice the size of mine
 #    jac_jhwi[:, 0] = jac_jhwi[:, 0]/2
@@ -576,7 +576,7 @@ def test_same_errors():
 
 def test_same_error_jacobian_full_vars():
     e = estimate.Estimate('directional')
-    results = (pd.read_csv('./matlab_tests/data/theta_firststage_plot.csv',
+    results = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
                            header=None)
                  .values
                  .flatten()
@@ -587,7 +587,7 @@ def test_same_error_jacobian_full_vars():
 
     jac_mine = e.jac_errors_full_vars(np.float64(results))
 
-    jac_jhwi = pd.read_csv('./matlab_tests/data/jacobian_errors_full.csv',
+    jac_jhwi = pd.read_csv('./tests/data/jacobian_errors_full.csv',
                            header=None).values
     # first column must be twice the size of mine
     jac_jhwi[:, 0] = jac_jhwi[:, 0]/2
@@ -603,7 +603,7 @@ def test_same_error_jacobian_full_vars():
 #    test_error_equivalence_full_vars_vs_few_vars()
 #    '''
 #    e = estimate.Estimate('directional')
-#    results = (pd.read_csv('./matlab_tests/data/theta_firststage_plot.csv',
+#    results = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
 #                           header=None)
 #                 .values
 #                 .flatten()
@@ -628,7 +628,7 @@ def test_same_error_jacobian_full_vars():
 #def test_error_jacobian_equivalence():
 #    ''' Read docstring of previous test. '''
 #    e = estimate.Estimate('directional')
-#    results = (pd.read_csv('./matlab_tests/data/theta_firststage_plot.csv',
+#    results = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
 #                           header=None)
 #                 .values
 #                 .flatten()
@@ -654,7 +654,7 @@ def test_same_variance_matrix_white():
     ''' One value is different with 7 decimals... '''
     e = estimate.Estimate('directional')
 
-    varlist = (pd.read_csv('./matlab_tests/data/theta_firststage_plot.csv',
+    varlist = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
                            header=None)
                  .values
                  .flatten()
@@ -663,7 +663,7 @@ def test_same_variance_matrix_white():
     varlist[0] = varlist[0]*2
     var_mine = e.get_variance(np.float64(varlist), full_vars = True)
 
-    var_jhwi = pd.read_csv('./matlab_tests/data/variance_white.csv',
+    var_jhwi = pd.read_csv('./tests/data/variance_white.csv',
                            header=None).values
     # Correct variance for first term
     var_jhwi[0, :] = 2*var_jhwi[0, :]
@@ -679,7 +679,7 @@ def test_same_variance_matrix_homo():
     ''' One value is different with 7 decimals... '''
     e = estimate.Estimate('directional')
 
-    varlist = (pd.read_csv('./matlab_tests/data/theta_firststage_plot.csv',
+    varlist = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
                            header=None)
                  .values
                  .flatten()
@@ -690,7 +690,7 @@ def test_same_variance_matrix_homo():
                               var_type='homo',
                               full_vars = True)
 
-    var_jhwi = pd.read_csv('./matlab_tests/data/variance_homo.csv',
+    var_jhwi = pd.read_csv('./tests/data/variance_homo.csv',
                            header=None).values
     # Correct variance for first term
     var_jhwi[0, :] = 2*var_jhwi[0, :]
@@ -705,7 +705,7 @@ def test_same_variance_matrix_homo():
 def test_simulate_contour_data():
     e = estimate.Estimate('directional')
 
-    varlist = (pd.read_csv('./matlab_tests/data/theta_firststage_plot.csv',
+    varlist = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
                            header=None)
                  .values
                  .flatten()
@@ -722,7 +722,7 @@ def test_simulate_contour_data():
 def test_same_city_sizes():
     e = estimate.Estimate('directional')
 
-    varlist = (pd.read_csv('./matlab_tests/data/theta_firststage_plot.csv',
+    varlist = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
                            header=None)
                  .values
                  .flatten()
@@ -730,21 +730,8 @@ def test_same_city_sizes():
     # sigma to zeta
     varlist[0] = varlist[0]*2
 
-    # Unpack arguments
-    zeta = varlist[0]
-
-    i = e.div_indices[True]
-    lng_guess = varlist[i['long_s']: i['long_e']]
-    lat_guess = varlist[i['lat_s']: i['lat_e']]
-    alpha = varlist[i['a_s']:]
-
-    size_mine = e.get_size(zeta,
-                           alpha,
-                           e.fetch_dist(lat_guess,
-                                        lng_guess,
-                                        True)
-                          )
-    size_jhwi = pd.read_csv('./matlab_tests/data/city_size.csv',
+    size_mine = e.get_size(varlist)
+    size_jhwi = pd.read_csv('./tests/data/city_size.csv',
                             header=None).values.flatten()
     np.testing.assert_array_almost_equal(size_mine, size_jhwi)
 
@@ -752,7 +739,7 @@ def test_same_city_sizes():
 def test_same_size_variances_white():
     e = estimate.Estimate('directional')
 
-    varlist = (pd.read_csv('./matlab_tests/data/theta_firststage_plot.csv',
+    varlist = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
                            header=None)
                  .values
                  .flatten()
@@ -763,7 +750,7 @@ def test_same_size_variances_white():
     variance_mine = e.get_size_variance(varlist,
                                         scale_kanes=False,
                                         var_type='white')
-    variance_jhwi = pd.read_csv('./matlab_tests/data/variance_size_white.csv',
+    variance_jhwi = pd.read_csv('./tests/data/variance_size_white.csv',
                            header=None).values
     np.testing.assert_array_almost_equal(variance_mine, variance_jhwi)
 
@@ -771,7 +758,7 @@ def test_same_size_variances_white():
 def test_same_size_variances_homo():
     e = estimate.Estimate('directional')
 
-    varlist = (pd.read_csv('./matlab_tests/data/theta_firststage_plot.csv',
+    varlist = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
                            header=None)
                  .values
                  .flatten()
@@ -782,7 +769,7 @@ def test_same_size_variances_homo():
     variance_mine = e.get_size_variance(varlist,
                                         scale_kanes=False,
                                         var_type='homo')
-    variance_jhwi = pd.read_csv('./matlab_tests/data/variance_size_homo.csv',
+    variance_jhwi = pd.read_csv('./tests/data/variance_size_homo.csv',
                            header=None).values
     np.testing.assert_array_almost_equal(variance_mine, variance_jhwi)
 
@@ -790,7 +777,7 @@ def test_same_size_variances_homo():
 def test_export_results():
     e = estimate.Estimate('directional')
 
-    varlist = (pd.read_csv('./matlab_tests/data/theta_firststage_plot.csv',
+    varlist = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
                            header=None)
                  .values
                  .flatten()
@@ -799,3 +786,55 @@ def test_export_results():
     varlist[0] = varlist[0]*2
     e.export_results(varlist)
 
+
+def test_same_output_table():
+    e = estimate.Estimate('directional')
+
+    varlist = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
+                           header=None)
+                 .values
+                 .flatten()
+                 )
+    # sigma to zeta
+    varlist[0] = varlist[0]*2
+    e.export_results(varlist)
+
+    coords = pd.read_csv('./estim_results/coordinates.csv')
+    cities =  pd.read_csv('./estim_results/cities.csv')
+
+    # Fetch table with ids and names
+    ids = pd.read_csv('../process/id.csv')
+
+    # Merge with coordinates and drop unmatched units
+    main = ids.merge(e.df_coordinates, how='right', on='id')
+
+    # Merge with coords and cities
+    main['tmp'] = 1 - main['validity']
+    main = (main.merge(cities, how='inner', on='id')
+                .merge(coords, how='left', on='id')
+                .sort_values(['tmp', 'id'])
+           )
+
+    d = {'longitude': 'long_x',
+         'latitude': 'lat_y'}
+    for coor in d.keys():
+        main.loc[pd.isnull(main[coor]), coor] = (
+                main.loc[pd.isnull(main[coor]), d[coor]])
+
+    # Select variables
+    main = main[['id',
+                 'longitude',
+                 'latitude',
+                 'city_name',
+                 'alpha',
+                 'size']
+                 + [v+'_sd_homo' for v in ['longitude',
+                                           'latitude',
+                                           'size',
+                                           'alpha']]
+                 + [v+'_sd_white' for v in ['longitude',
+                                            'latitude',
+                                            'size',
+                                            'alpha']]
+                 ]
+    main.to_csv('./tests/data/report_table_fdv.csv')

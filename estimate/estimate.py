@@ -17,20 +17,17 @@ import sys
 
 
 # Configuration
+#if __name__ == "__main__":
+## execute only if run as a script
+config = ConfigParser.ConfigParser()
 
+## file keys.ini should be in process.py parent directory.
+config.read(os.path.dirname(os.path.dirname(__file__)) + '/keys.ini')
 
-if __name__ == "__main__":
-    # execute only if run as a script
-    config = ConfigParser.ConfigParser()
-
-    ## file keys.ini should be in process.py parent directory.
-    print(os.path.dirname(os.path.dirname(__file__)) + '/keys.ini')
-    config.read(os.path.dirname(os.path.dirname(__file__)) + '/keys.ini')
-
-    ## Paths
-    root = config.get('paths', 'root')
-    root_jhwi = config.get('paths', 'root_jhwi')
-    process = config.get('paths', 'process')
+## Paths
+root = config.get('paths', 'root')
+root_jhwi = config.get('paths', 'root_jhwi')
+process = config.get('paths', 'process')
 
 
 
@@ -426,9 +423,14 @@ class Estimate(object):
         return x0
 
 
-    def solve(self, x0, constraint_type='static', full_vars=False):
+    def solve(self,
+              x0,
+              constraint_type = 'static',
+              max_iter = 25000,
+              full_vars = False):
         '''
         x0: list. It is the initial value.
+        max_iter: int. Maximum iterations before IPOPT stops.
         constraint_type: str. One of 'static' or 'dynamic'.
         Returns a one-row dataframe with optimization information.
         '''
@@ -459,7 +461,7 @@ class Estimate(object):
                          'tol': 1e-8,
                          'acceptable_tol': 1e-7,
                          'acceptable_iter': 100,
-                         'max_iter': 25000 }
+                         'max_iter': max_iter }
         for option in option_specs.keys():
             nlp.addOption(option, option_specs[option])
 
@@ -490,7 +492,12 @@ class Estimate(object):
         return df
 
 
-    def gen_data(self, len_sim, perturb, rank=None, full_vars=False):
+    def gen_data(self,
+                 len_sim,
+                 perturb,
+                 rank = None,
+                 max_iter = 25000,
+                 full_vars = False):
         '''
         rank: int. Process number in parallelized computing.
         Returns simulation dataframe sorted by objective value
@@ -498,7 +505,7 @@ class Estimate(object):
         # Get initial values
         x0 = self.initial_cond(len_sim, perturb, full_vars)
 
-        data = self.solve( x0[0, :], full_vars=full_vars )
+        data = self.solve( x0[0, :], max_iter=max_iter, full_vars=full_vars )
         for i in range(1, len_sim):
             i_val = x0[i, :]
             data = data.append( self.solve(i_val, full_vars=full_vars) )
@@ -687,11 +694,20 @@ class Estimate(object):
         return df
 
 
-    def get_size(self, zeta, alpha, distances, scale_kanes=False, theta=4.0):
+    def get_size(self, varlist, scale_kanes=False, theta=4.0):
         '''
         Returns the fundamental size of cities:
             Size_i proportional to L_i T_i^(1/theta)
         '''
+        # Unpack arguments
+        zeta = varlist[0]
+        i = self.div_indices[True]
+        lng_guess = varlist[i['long_s']: i['long_e']]
+        lat_guess = varlist[i['lat_s']: i['lat_e']]
+        alpha = varlist[i['a_s']:]
+
+        distances = self.fetch_dist(lat_guess, lng_guess, True)
+
         factor_1 = alpha**(1 + 1.0/theta)
 
         ## Build summation
@@ -717,24 +733,8 @@ class Estimate(object):
         Return the variance-covariance matrix of sizes.
         '''
         def size_for_grad(v):
-            '''
-            get_size function for autograd
-            It can standardize size (so Kanes = 100)
-            '''
-            # Unpack arguments
-            zeta = v[0]
-            i = self.div_indices[True]
-            lng_guess = v[i['long_s']: i['long_e']]
-            lat_guess = v[i['lat_s']: i['lat_e']]
-            alpha = v[i['a_s']:]
-            # Get sizes
-            sizes = self.get_size(zeta,
-                                  alpha,
-                                  self.fetch_dist(lat_guess,
-                                                  lng_guess,
-                                                  True),
-                                  scale_kanes=scale_kanes)
-            return sizes
+            ''' get_size function for autograd '''
+            return self.get_size(v)
 
         # Get Jacobian
         jac_size = jacobian(size_for_grad)
@@ -781,9 +781,7 @@ class Estimate(object):
         # 2. Unpack varlist arguments
         zeta = varlist[0]
         i = self.div_indices[True]
-        lng = varlist[i['long_s']: i['long_e']]
         lng_estim = varlist[i['long_unknown_s']: i['long_e']]
-        lat = varlist[i['lat_s']: i['lat_e']]
         lat_estim = varlist[i['lat_unknown_s']: i['lat_e']]
         alpha = varlist[i['a_s']:]
 
@@ -827,12 +825,11 @@ class Estimate(object):
         coordinates.to_csv('./estim_results/coordinates.csv', index=False)
 
         # 5. Save sizes and alphas (+ standard errors)
-        distances = self.fetch_dist(lat, lng, full_vars=True)
-        size = self.get_size(zeta, alpha, distances)
+        size = self.get_size(varlist)
 
         alpha = varlist[i['a_s']:]
         alpha_white = varlist_sd_white[j['a_s']:]
-        alpha_homo = varlist_sd_white[j['a_s']:]
+        alpha_homo = varlist_sd_homo[j['a_s']:]
 
         ## Insert missing s.e. for kanes in alpha and in sizes
         alpha_white = np.insert(alpha_white, 1, np.nan)
