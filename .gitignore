@@ -11,4 +11,10 @@ __pycache__
 
 .cache
 
+# Files
 keys.ini
+estimate/sandbox.py
+
+# Directories
+tasks
+estimate/.old

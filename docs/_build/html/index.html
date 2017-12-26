@@ -1,0 +1,557 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Welcome to Assyria’s documentation! &#8212; Assyria 0.1 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head>
+  <body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="welcome-to-assyria-s-documentation">
+<h1>Welcome to Assyria’s documentation!<a class="headerlink" href="#welcome-to-assyria-s-documentation" title="Permalink to this headline">¶</a></h1>
+<div class="toctree-wrapper compound">
+</div>
+<dl class="class">
+<dt id="estimate.Estimate">
+<em class="property">class </em><code class="descclassname">estimate.</code><code class="descname">Estimate</code><span class="sig-paren">(</span><em>build_type</em>, <em>lat=(36</em>, <em>42)</em>, <em>lng=(27</em>, <em>45)</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Class for estimation procedures.</p>
+<p>Initializes the data used to be used:</p>
+<ul class="simple">
+<li>loads processed datasets.</li>
+<li>sets coordinates in degrees.</li>
+<li>sets known and unknown coordinates datasets as separate attributes.</li>
+<li>saves the number of known and unknown cities</li>
+<li><dl class="first docutils">
+<dt>saves the gradient of the objective function as attribute, to avoid</dt>
+<dd>calling autograd multiple times.</dd>
+</dl>
+</li>
+<li>saves the jacobian of errors</li>
+<li><dl class="first docutils">
+<dt>saves the dividing indices to go from variable array to individual</dt>
+<dd>components.</dd>
+</dl>
+</li>
+<li>saves other data to speed up self.tile_nodiag and self.get_errors</li>
+</ul>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>build_type</strong> (<a class="reference external" href="https://docs.python.org/2/library/functions.html#str" title="(in Python v2.7)"><em>str</em></a>) – One of “directional” or “non-directional”.</li>
+<li><strong>lat</strong> (<a class="reference external" href="https://docs.python.org/2/library/functions.html#tuple" title="(in Python v2.7)"><em>tuple</em></a>) – Contains assumed lower and upper latitude bounds.</li>
+<li><strong>lng</strong> (<a class="reference external" href="https://docs.python.org/2/library/functions.html#tuple" title="(in Python v2.7)"><em>tuple</em></a>) – Contains assumed lower and upper longitude bounds.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+<dl class="method">
+<dt id="estimate.Estimate.haversine_approx">
+<code class="descname">haversine_approx</code><span class="sig-paren">(</span><em>coord_i</em>, <em>coord_j</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.haversine_approx"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.haversine_approx" title="Permalink to this definition">¶</a></dt>
+<dd><p>Compute distances from 2 coordinates arrays.</p>
+<p>The distances are computed using the approximation to the Haversine
+formula discussed in the paper.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>coord_i</strong> (<em>numpy.ndarray</em>) – The first set of coordinates. It must have
+the latitude in column 0 and the longitude in column 1.</li>
+<li><strong>coord_j</strong> (<em>numpy.ndarray</em>) – The second set of coordinates.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first">The one-dimensional array of distances.</p>
+</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body"><p class="first last">numpy.ndarray</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.tile_nodiag">
+<code class="descname">tile_nodiag</code><span class="sig-paren">(</span><em>arr</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.tile_nodiag"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.tile_nodiag" title="Permalink to this definition">¶</a></dt>
+<dd><p>Tile a 1-dimensional array avoiding entry i in repetition i.</p>
+<p>The array is tiled <cite>self.num_cities</cite> times.</p>
+<p>To increase execution speed, the indices to extract from tiled array
+have been pre-specified in <cite>__init__</cite>.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>arr</strong> (<em>numpy.ndarray</em>) – A 1-dim array that should be of length
+<cite>self.num_cities</cite>.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body">an array repeating <cite>arr</cite> the number of times given
+by <cite>self.num_cities</cite>, but extracting value in index j on
+repetition j.</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body">numpy.ndarray</td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Examples</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="bp">self</span><span class="o">.</span><span class="n">tile_nodiag</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span>
+<span class="go">array([2, 3, 1, 3, 1, 2])</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_coordinate_pairs">
+<code class="descname">get_coordinate_pairs</code><span class="sig-paren">(</span><em>lat_guess</em>, <em>lng_guess</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_coordinate_pairs"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_coordinate_pairs" title="Permalink to this definition">¶</a></dt>
+<dd><p>Forms coordinates of all pairs of different locations.</p>
+<p>This function leverages that</p>
+<ul class="simple">
+<li><dl class="first docutils">
+<dt><cite>self.df_iticount</cite> is sorted according to <cite>id_jhwi_j</cite> first and then</dt>
+<dd>by <cite>id_jhwi_i</cite>.</dd>
+</dl>
+</li>
+<li><cite>self.df_coordinates</cite> is sorted according to <cite>id_jhwi</cite>.</li>
+</ul>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>lat_guess</strong> (<em>numpy.ndarray</em>) – The 1-dimensional array of latitudes.</li>
+<li><strong>lng_guess</strong> (<em>numpy.ndarray</em>) – The 1-dimensional array of longitudes.</li>
+<li><strong>full_vars</strong> (<a class="reference external" href="https://docs.python.org/2/library/functions.html#bool" title="(in Python v2.7)"><em>bool</em></a>) – If True, the known city coordinates are assumed
+to be included.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.fetch_dist">
+<code class="descname">fetch_dist</code><span class="sig-paren">(</span><em>lat_guess</em>, <em>lng_guess</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.fetch_dist"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.fetch_dist" title="Permalink to this definition">¶</a></dt>
+<dd><p>Compute the distances of all pairs of different locations.</p>
+<p>Calls <cite>self.get_coordinate_pairs</cite> uses its output to call
+<cite>self.haversine_approx</cite>.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.s_ij_model">
+<code class="descname">s_ij_model</code><span class="sig-paren">(</span><em>zeta</em>, <em>alpha</em>, <em>distances</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.s_ij_model"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.s_ij_model" title="Permalink to this definition">¶</a></dt>
+<dd><p>Compute the model-predicted trade shares.</p>
+<p>The idea is to cast elements as matrix, add over <cite>axis=0</cite>,
+repeat the result by the number of cities less one, and divide
+elements by this new 1-dim array.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>zeta</strong> (<a class="reference external" href="https://docs.python.org/2/library/functions.html#float" title="(in Python v2.7)"><em>float</em></a>) – The distance elasticity of trade.</li>
+<li><strong>alpha</strong> (<em>numpy.ndarray</em>) – City-specific alphas.</li>
+<li><strong>distances</strong> (<em>numpy.ndarray</em>) – Contains distances between all j, i
+pairs of cities, excluding j, j pairs.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first">The model-predicted trade shares.</p>
+</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body"><p class="first last">numpy.ndarray</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_errors">
+<code class="descname">get_errors</code><span class="sig-paren">(</span><em>varlist</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_errors"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_errors" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the model and data trade share differences.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>varlist</strong> (<em>numpy.ndarray</em>) – it is composed of
+<cite>[zeta, alpha, lat_guess, lng_guess]</cite>.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body">the difference between data and model trade shares.</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body">numpy.ndarray</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.sqerr_sum">
+<code class="descname">sqerr_sum</code><span class="sig-paren">(</span><em>varlist</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.sqerr_sum"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.sqerr_sum" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets the sum of squared errors.</p>
+<p>This is the objective function.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body">The value of the objective function given the data
+and model trade shares.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Return type:</th><td class="field-body">numpy.float64</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.replace_id_coord">
+<code class="descname">replace_id_coord</code><span class="sig-paren">(</span><em>constr</em>, <em>drop_wahsusana=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.replace_id_coord"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.replace_id_coord" title="Permalink to this definition">¶</a></dt>
+<dd><p>Replaces the city id with its coordinates in the constraints data.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>constr</strong> (<em>DataFrame</em>) – Specifies upper and lower bounds for
+coordinates of cities.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body">The constraints data with substituted coordinates.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_bounds">
+<code class="descname">get_bounds</code><span class="sig-paren">(</span><em>constr</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_bounds"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_bounds" title="Permalink to this definition">¶</a></dt>
+<dd><p>Fetch the upper and lower bounds for all entries in <cite>varlist</cite>.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>constr</strong> (<em>DataFrame</em>) – Specifies upper and lower bounds for
+coordinates of cities.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body">(lb, ub), where lb and ub are of type <cite>list</cite> for the bounds.</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body"><a class="reference external" href="https://docs.python.org/2/library/functions.html#tuple" title="(in Python v2.7)">tuple</a></td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.initial_cond">
+<code class="descname">initial_cond</code><span class="sig-paren">(</span><em>len_sim=None</em>, <em>perturb=None</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.initial_cond"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.initial_cond" title="Permalink to this definition">¶</a></dt>
+<dd><p>Gets initial condition(s) for <cite>IPOPT</cite>.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>len_sim</strong> (<a class="reference external" href="https://docs.python.org/2/library/functions.html#int" title="(in Python v2.7)"><em>int</em></a>) – Specifies the number of initial conditions to draw.</li>
+<li><strong>perturb</strong> (<a class="reference external" href="https://docs.python.org/2/library/functions.html#float" title="(in Python v2.7)"><em>float</em></a>) – A percentage deviation from the default initial
+value given in <cite>self.df_coordinates</cite>.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first"><dl class="docutils">
+<dt>The default initial condition if perturb is not</dt>
+<dd><p class="first last">specified, and an array with <cite>len_sim</cite> perturbed initial
+conditions.</p>
+</dd>
+</dl>
+</p>
+</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body"><p class="first last">numpy.ndarray</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.solve">
+<code class="descname">solve</code><span class="sig-paren">(</span><em>x0</em>, <em>constraint_type='static'</em>, <em>max_iter=25000</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.solve"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.solve" title="Permalink to this definition">¶</a></dt>
+<dd><p>Solve the sum of squared distances minimization problem with IPOPT.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>x0</strong> (<em>list</em>) – The initial value.</li>
+<li><strong>max_iter</strong> (<a class="reference external" href="https://docs.python.org/2/library/functions.html#int" title="(in Python v2.7)"><em>int</em></a>) – Maximum iterations before IPOPT stops.</li>
+<li><strong>constraint_type</strong> (<a class="reference external" href="https://docs.python.org/2/library/functions.html#str" title="(in Python v2.7)"><em>str</em></a>) – One of ‘static’ or ‘dynamic’.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">A one-row dataframe with optimization information.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.gen_data">
+<code class="descname">gen_data</code><span class="sig-paren">(</span><em>len_sim</em>, <em>perturb</em>, <em>rank=None</em>, <em>max_iter=25000</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.gen_data"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.gen_data" title="Permalink to this definition">¶</a></dt>
+<dd><p>Run <cite>self.solve</cite> for many initial values.</p>
+<p>This function is the one called when running estimation in parallel.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>rank</strong> (<a class="reference external" href="https://docs.python.org/2/library/functions.html#int" title="(in Python v2.7)"><em>int</em></a>) – Process number in parallelized computing.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body">simulation dataframe sorted by objective value</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body">DataFrame</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_best_result">
+<code class="descname">get_best_result</code><span class="sig-paren">(</span><em>results</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_best_result"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_best_result" title="Permalink to this definition">¶</a></dt>
+<dd><p>Extract the best result from the estimation output.</p>
+<p>Not sure if this is useful…
+results: pd.DataFrame. It is the output of the parallelized execution.
+returns the row with minimum objective function value.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.resolve">
+<code class="descname">resolve</code><span class="sig-paren">(</span><em>result</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.resolve"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.resolve" title="Permalink to this definition">¶</a></dt>
+<dd><p>Again, not sure if this is useful…
+result: pd.DataFrame. Output of self.get_best_result</p>
+<p>Recursively digs into the coordinates results if the maximum number of
+iterations was reached. Otherwise it returns the best solution.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.full_to_short_i">
+<code class="descname">full_to_short_i</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.full_to_short_i"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.full_to_short_i" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the indices of elements of short <cite>varlist</cite> from full <cite>varlist</cite>.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body"><dl class="docutils">
+<dt>the indices to select short varlist from full</dt>
+<dd>varlist</dd>
+</dl>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Return type:</th><td class="field-body">numpy.ndarray</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.output_to_jhwi">
+<code class="descname">output_to_jhwi</code><span class="sig-paren">(</span><em>output</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.output_to_jhwi"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.output_to_jhwi" title="Permalink to this definition">¶</a></dt>
+<dd><p>DEPRECATED
+Returns the initial value to evaluate the MATLAB objective function.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_variance_gmm">
+<code class="descname">get_variance_gmm</code><span class="sig-paren">(</span><em>varlist</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_variance_gmm"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_variance_gmm" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the GMM variance-covariance matrix of the estimators</p>
+<p>Applies standard GMM formula. This function needs to be revised.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_variance">
+<code class="descname">get_variance</code><span class="sig-paren">(</span><em>varlist</em>, <em>var_type='white'</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_variance"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_variance" title="Permalink to this definition">¶</a></dt>
+<dd><p>Compute the variance-covariance matrix of the estimators.</p>
+<p>It can be computed according to the White formula, or with
+homoskedasticity.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>var_type</strong> (<a class="reference external" href="https://docs.python.org/2/library/functions.html#str" title="(in Python v2.7)"><em>str</em></a>) – One of ‘white’ or ‘homo’.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body">The variance-covariance matrix of the estimators.</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body">numpy.ndarray</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.simulate_contour_data">
+<code class="descname">simulate_contour_data</code><span class="sig-paren">(</span><em>varlist</em>, <em>size=20000</em>, <em>var_type='white'</em>, <em>full_vars=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.simulate_contour_data"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.simulate_contour_data" title="Permalink to this definition">¶</a></dt>
+<dd><p>Simulates contour data using the estimation results.</p>
+<p>Draws values from a normal distribution with mean equal to the
+estimated parameters and variance-covariance matrix given by
+<cite>self.get_variance</cite>.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>varlist</strong> (<em>numpy.ndarray</em>) – The mean. It should be the estimated
+vector of parameters.</li>
+<li><strong>size</strong> (<a class="reference external" href="https://docs.python.org/2/library/functions.html#int" title="(in Python v2.7)"><em>int</em></a>) – The number of draws from the normal distribution to
+get.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">numpy.ndarray</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_size">
+<code class="descname">get_size</code><span class="sig-paren">(</span><em>varlist</em>, <em>scale_kanes=False</em>, <em>theta=4.0</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_size"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_size" title="Permalink to this definition">¶</a></dt>
+<dd><p>Retrieve the fundamental size of cities.</p>
+<p>Recall Size_i is proportional to L_i T_i^(1/theta).</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>theta</strong> (<a class="reference external" href="https://docs.python.org/2/library/functions.html#float" title="(in Python v2.7)"><em>float</em></a>) – The trade elasticity parameter that is assumed away.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body">The fundamental size of cities</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body">numpy.ndarray</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.get_size_variance">
+<code class="descname">get_size_variance</code><span class="sig-paren">(</span><em>varlist</em>, <em>scale_kanes=False</em>, <em>var_type='white'</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.get_size_variance"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.get_size_variance" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get the fundamental size variance-covariance matrix.</p>
+<p>Applies Delta Method to get the variance-covariance matrix of the city
+size estimates.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body">The variance-covariance matrix of city sizes.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Return type:</th><td class="field-body">numpy.ndarray</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="estimate.Estimate.export_results">
+<code class="descname">export_results</code><span class="sig-paren">(</span><em>varlist</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/estimate.html#Estimate.export_results"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#estimate.Estimate.export_results" title="Permalink to this definition">¶</a></dt>
+<dd><p>Export the estimation results.</p>
+<p>Exports zeta.csv, coordinates.csv, cities.csv, simulation.csv</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>varlist</strong> (<em>numpy.ndarray</em>) – it is in jhwi format:</td>
+</tr>
+</tbody>
+</table>
+<p><cite>(zeta, useless, long_known, long_unknown, lat_known, lat_unknown, a)</cite></p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="#">Assyria</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="#">Documentation overview</a><ul>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2017, Hortacsu.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.6.3</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.10</a>
+      
+      |
+      <a href="_sources/index.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

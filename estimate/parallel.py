@@ -16,8 +16,11 @@ simulations = 5
 ## Maximum number of iterations before IPOPT stops.
 iters = 100
 
-## Estimation type
+## Estimation type ('directional' or 'non_directional')
 e_type = 'directional'
+
+## Type of perturbation ('rigid' or 'flexible')
+perturb_type = 'rigid'
 
 ## Name of resulting data including full path (in server)
 path = '/home/delvillar/assyria/fdv/estimate/par_estimation_dir.csv'
@@ -38,9 +41,9 @@ estimator = estimate.Estimate(e_type)
 
 est_data = estimator.gen_data(len_sim = simulations,
                               perturb = 0.2,
+                              perturb_type = perturb_type,
                               rank = rank+1,
-                              max_iter = iters,
-                              full_vars = True)
+                              max_iter = iters)
 
 if rank > 0:
     comm.send( est_data, dest=0 )

@@ -1,3 +1,0 @@
-\select@language {english}
-\contentsline {chapter}{\numberline {1}Estimation}{1}{chapter.1}
-\contentsline {chapter}{Index}{3}{section*.26}

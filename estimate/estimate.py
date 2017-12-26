@@ -1,6 +1,7 @@
-'''
-Model Parameter Estimation
-'''
+""" Parameter Estimation
+
+This module provides all functions to estimate the model parameters.
+"""
 
 import os
 import ConfigParser
@@ -32,24 +33,28 @@ process = config.get('paths', 'process')
 
 
 class Estimate(object):
+    """ Class for estimation procedures.
+
+    Initializes the data used to be used:
+
+    * loads processed datasets.
+    * sets coordinates in degrees.
+    * sets known and unknown coordinates datasets as separate attributes.
+    * saves the number of known and unknown cities
+    * saves the gradient of the objective function as attribute, to avoid
+        calling autograd multiple times.
+    * saves the jacobian of errors
+    * saves the dividing indices to go from variable array to individual
+        components.
+    * saves other data to speed up self.tile_nodiag and self.get_errors
+
+    Args:
+        build_type (str): One of "directional" or "non-directional".
+        lat (tuple): Contains assumed lower and upper latitude bounds.
+        lng (tuple): Contains assumed lower and upper longitude bounds.
+    """
 
     def __init__(self, build_type, lat = (36, 42), lng = (27, 45)):
-        '''
-        build_type: str. One of "directional" or "non-directional".
-        lat: 2-element tuple. Contains assumed lower and upper latitude bounds
-        lng: 2-element tuple. Contains assumed lower and upper longitude bounds
-
-        Loads all processed datasets.
-
-            Sets coordinates in degrees.
-        Sets known and unknown coordinates datasets as separate attributes.
-
-        Adds selected vars from trade data with known coordinates as
-        attribute. This will be the main dataset to work with further down.
-
-        Saves the gradient of the objective function as attribute, to avoid
-        calling autograd multiple times.
-        '''
         self.lat = lat
         self.lng = lng
         self.build_type = build_type
@@ -99,30 +104,17 @@ class Estimate(object):
         self.num_cities_known = len(self.df_known)
         self.num_cities_unknown = len(self.df_unknown)
 
-        # Add known locations to trade data
-        self.df_main = self.df_iticount[['id_j', 'id_i', 's_ij']]
-        for status in ['i', 'j']:
-            self.df_main = (self.df_main.merge(self.df_known,
-                                              how = 'left',
-                                              left_on = 'id_'+status,
-                                              right_on = 'id'
-                                             )
-                            .rename(columns={'long_x': 'long_x_'+status,
-                                             'lat_y': 'lat_y_'+status})
-                           )
-        self.df_main = self.df_main.drop(['id_x', 'id_y'], axis = 1)
-
         # Automatic differentiation of objective and errors
 
         ## Objective
         ### Using only relevant vars
         def objective(varlist):
-            ''' This is the formulation for autograd. '''
+            """ This is the formulation for autograd. """
             return self.sqerr_sum(varlist)
         self.grad = grad(objective)
         ### Using all vars
         def objective_full_vars(varlist):
-            ''' This is the formulation for autograd. '''
+            """ This is the formulation for autograd. """
             return self.sqerr_sum(varlist, full_vars=True)
         self.grad_full_vars = grad(objective_full_vars)
 
@@ -134,11 +126,6 @@ class Estimate(object):
         def error_autograd_full_vars(v):
             return self.get_errors(v, full_vars=True)
         self.jac_errors_full_vars = jacobian(error_autograd_full_vars)
-
-        # Save array index that views array of size len(self.df_coordinates)
-        # and selects off-diagonal elements. See self.tile_nodiag.
-        i = np.repeat(np.arange(1, self.num_cities), self.num_cities)
-        self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
 
         # Save indices to unpack argument of objective and gradient
         # There is a set of indices if we are using the full set of coordinates
@@ -161,18 +148,29 @@ class Estimate(object):
                     'a_e': 1 + 2*self.num_cities_unknown + self.num_cities}
         }
 
-        # Save trade shares located in df_main
+        # Save array index that views array of size len(self.df_coordinates)
+        # and selects off-diagonal elements. See self.tile_nodiag.
+        i = np.repeat(np.arange(1, self.num_cities), self.num_cities)
+        self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
+
+        # Save trade shares (to speed up self.get_errors)
         self.df_shares = self.df_iticount['s_ij'].values
 
 
     def haversine_approx(self, coord_i, coord_j):
-        '''
-        coord_i, coord_j: np.array. 2 columns, len(iticount) rows. First column
-        (column 0) is latitude, second column (column 1) is longitude.
+        """ Compute distances from 2 coordinates arrays.
 
-        Returns the approximation of the Haversine formula described in the
-        estimation section of the paper.
-        '''
+        The distances are computed using the approximation to the Haversine
+        formula discussed in the paper.
+
+        Args:
+            coord_i (numpy.ndarray): The first set of coordinates. It must have
+                the latitude in column 0 and the longitude in column 1.
+            coord_j (numpy.ndarray): The second set of coordinates.
+
+        Returns:
+            numpy.ndarray: The one-dimensional array of distances.
+        """
         factor_out = 10000.0/90
         factor_in = np.cos(37.9 * np.pi / 180)
 
@@ -188,31 +186,46 @@ class Estimate(object):
 
 
     def tile_nodiag(self, arr):
-        '''
-        arr: np.array. A 1-dim array of length self.num_cities.
+        """ Tile a 1-dimensional array avoiding entry i in repetition i.
 
-        Returns an array repeating arr the number of times given by
-        self.num_cities, but extracting value in index j on repetition j.
+        The array is tiled `self.num_cities` times.
 
-        example: If arr = np.array([1, 2, 3]) then self.tile_nodiag(arr) returns
-        np.array([2, 3, 1, 3, 1, 2]).
-        '''
+        To increase execution speed, the indices to extract from tiled array
+        have been pre-specified in `__init__`.
+
+        Args:
+            arr (numpy.ndarray): A 1-dim array that should be of length
+                `self.num_cities`.
+
+        Returns:
+            numpy.ndarray: an array repeating `arr` the number of times given
+            by `self.num_cities`, but extracting value in index j on
+            repetition j.
+
+        Examples:
+            >>> self.tile_nodiag(arr)
+            array([2, 3, 1, 3, 1, 2])
+        """
         arr_tiled = np.tile(arr, self.num_cities)
 
         return arr_tiled[self.index_nodiag]
 
 
     def get_coordinate_pairs(self, lat_guess, lng_guess, full_vars=False):
-        '''
-        full_vars: bool. If True, the known coordinates are included as
-        variables of the objective and gradient.
+        """ Forms coordinates of all pairs of different locations.
 
-        This is an alternative implementation of the fetching distance process,
+        This function leverages that
 
-        Leverages the fact that the iticount data is sorted according to
-        id_jhwi_j first, then by id_jhwi_i, and the coordinates are sorted
-        according to id_jhwi.
-        '''
+        * `self.df_iticount` is sorted according to `id_jhwi_j` first and then
+            by `id_jhwi_i`.
+        * `self.df_coordinates` is sorted according to `id_jhwi`.
+
+        Args:
+            lat_guess (numpy.ndarray): The 1-dimensional array of latitudes.
+            lng_guess (numpy.ndarray): The 1-dimensional array of longitudes.
+            full_vars (bool): If True, the known city coordinates are assumed
+                to be included.
+        """
         if full_vars:
             lats = lat_guess
             longs = lng_guess
@@ -234,25 +247,31 @@ class Estimate(object):
 
 
     def fetch_dist(self, lat_guess, lng_guess, full_vars=False):
-        '''
-        Wrapper
-        '''
+        """ Compute the distances of all pairs of different locations.
+
+        Calls `self.get_coordinate_pairs` uses its output to call
+        `self.haversine_approx`.
+        """
         coords = self.get_coordinate_pairs(lat_guess, lng_guess, full_vars)
         return self.haversine_approx( coords[0], coords[1] )
 
 
     def s_ij_model(self, zeta, alpha, distances):
-        '''
-        zeta: float. The distance elasticity of trade.
-        alpha: np.array. One for each importing city.
-        distances: np.array. Contains distances between all j, i pairs,
-        excluding j, j pairs.
+        """ Compute the model-predicted trade shares.
 
-        Idea: cast elements as matrix, add over axis=0,
-        repeat (number of cities - 1), divide elements by this new 1-dim array.
+        The idea is to cast elements as matrix, add over `axis=0`,
+        repeat the result by the number of cities less one, and divide
+        elements by this new 1-dim array.
 
-        Returns np.array: the model-predicted trade shares
-        '''
+        Args:
+            zeta (float): The distance elasticity of trade.
+            alpha (numpy.ndarray): City-specific alphas.
+            distances (numpy.ndarray): Contains distances between all j, i
+                pairs of cities, excluding j, j pairs.
+
+        Returns:
+            numpy.ndarray: The model-predicted trade shares.
+        """
         a = self.tile_nodiag(alpha)
         elems = a * (distances ** (-zeta))
 
@@ -264,11 +283,15 @@ class Estimate(object):
 
 
     def get_errors(self, varlist, full_vars=False):
-        '''
-        varlist = np.array([zeta, alpha, lat_guess, lng_guess]).
+        """ Get the model and data trade share differences.
 
-        Returns the difference of data and model trade shares.
-        '''
+        Args:
+            varlist (numpy.ndarray):it is composed of
+                `[zeta, alpha, lat_guess, lng_guess]`.
+
+        Returns:
+            numpy.ndarray: the difference between data and model trade shares.
+        """
         # Unpack arguments
         zeta = varlist[0]
 
@@ -289,22 +312,27 @@ class Estimate(object):
 
 
     def sqerr_sum(self, varlist, full_vars=False):
-        '''
-        Returns the value of the objective function given the data and the
-        model trade shares.
-        '''
+        """ Gets the sum of squared errors.
+
+        This is the objective function.
+
+        Returns:
+            numpy.float64: The value of the objective function given the data
+            and model trade shares.
+        """
         errors = self.get_errors(varlist, full_vars)
         return np.dot(errors, errors)
 
 
     def replace_id_coord(self, constr, drop_wahsusana=False):
-        '''
-        constr: pd.DataFrame. Specifies upper and lower bounds for
-        coordinates of cities.
+        """ Replaces the city id with its coordinates in the constraints data.
 
-        Replaces the city id with its corresponding latitudes and longitudes in
-        the constraints datasets.
-        '''
+        Args:
+            constr (DataFrame): Specifies upper and lower bounds for
+                coordinates of cities.
+        Returns:
+            The constraints data with substituted coordinates.
+        """
         constr = constr.copy()
 
         if drop_wahsusana:
@@ -340,9 +368,15 @@ class Estimate(object):
 
 
     def get_bounds(self, constr, full_vars=False):
-        '''
-        Returns (lb, ub), where lb and ub are lists for the bounds.
-        '''
+        """ Fetch the upper and lower bounds for all entries in `varlist`.
+
+        Args:
+            constr (DataFrame): Specifies upper and lower bounds for
+                coordinates of cities.
+
+        Returns:
+            tuple: (lb, ub), where lb and ub are of type `list` for the bounds.
+        """
         # Build specs: Ursu does not participate if directional, Kanes is in 
         # second position in coordinates dataframe if directional, third
         # otherwise.
@@ -392,15 +426,28 @@ class Estimate(object):
         return (lb, ub)
 
 
-    def initial_cond(self, len_sim=None, perturb=None, full_vars=False) :
-        '''
-        len_sim: int. Specifies the number of draws to take.
-        perturb: float. Specifies a percentage deviation from the default
-        initial value.
+    def initial_cond(self,
+                     len_sim=None,
+                     perturb=None,
+                     perturb_type='rigid',
+                     full_vars=False):
+        """ Gets initial condition(s) for `IPOPT`.
 
-        Returns default initial condition if perturb is not specified, and an
-        array of perturbed values of dimension (len_sim, numvars)
-        '''
+        Args:
+            len_sim (int): Specifies the number of initial conditions to draw.
+            perturb (float): A percentage deviation from the default initial
+                value given in `self.df_coordinates`.
+            perturb_type (str): Type of perturbation on the default initial
+                value. If `'rigid'` then the whole initial value vector is
+                multiplied by a scalar. If `'flexible'` then each element of
+                the initial value vector is multiplied by a different scalar.
+                Default is `'rigid'`.
+
+        Returns:
+            numpy.ndarray: The default initial condition if perturb is not
+                specified, and an array with `len_sim` perturbed initial
+                conditions.
+        """
         # Form default initial value
         zeta = [2.0]
         alphas = np.ones(self.num_cities)
@@ -413,11 +460,19 @@ class Estimate(object):
             lats = self.df_unknown['lat_y'].values
             longs = self.df_unknown['long_x'].values
         x0 = np.concatenate((zeta, longs, lats, alphas))
+        print(x0)
 
         # Perturb it
         if perturb != None:
             x0 = np.tile(x0, (len_sim, 1))
-            p = np.random.uniform(1-perturb, 1+perturb, size=(len_sim, 1))
+
+            if perturb_type == 'rigid':
+                p = np.random.uniform(1-perturb, 1+perturb, size=(len_sim, 1))
+            elif perturb_type == 'flexible':
+                p = np.random.uniform(1-perturb,
+                                      1+perturb,
+                                      size=(len_sim, x0.shape[1]))
+            print(p)
             x0 = x0*p
 
         return x0
@@ -427,13 +482,20 @@ class Estimate(object):
               x0,
               constraint_type = 'static',
               max_iter = 25000,
-              full_vars = False):
-        '''
-        x0: list. It is the initial value.
-        max_iter: int. Maximum iterations before IPOPT stops.
-        constraint_type: str. One of 'static' or 'dynamic'.
-        Returns a one-row dataframe with optimization information.
-        '''
+              full_vars = False,
+              solver='ma57'):
+        """ Solve the sum of squared distances minimization problem with IPOPT.
+
+        Args:
+            x0 (list): The initial value.
+            max_iter (int): Maximum iterations before IPOPT stops.
+            constraint_type (str): One of 'static' or 'dynamic'.
+            solver (str): Linear solver. 'ma57' is the default. If not
+                available, use 'mumps'.
+
+        Returns:
+            A one-row dataframe with optimization information.
+        """
         # Set bounds
         if constraint_type == 'static':
             constr = self.replace_id_coord(self.df_constr_stat)
@@ -454,7 +516,7 @@ class Estimate(object):
 
         # Add IPOPT options (some jhwi options were default)
         option_specs = { 'hessian_approximation': 'limited-memory',
-                         'linear_solver': 'ma57',
+                         'linear_solver': solver,
                          'limited_memory_max_history': 100,
                          'limited_memory_max_skipping': 1,
                          'mu_strategy': 'adaptive',
@@ -495,15 +557,22 @@ class Estimate(object):
     def gen_data(self,
                  len_sim,
                  perturb,
+                 perturb_type = 'rigid',
                  rank = None,
                  max_iter = 25000,
                  full_vars = False):
-        '''
-        rank: int. Process number in parallelized computing.
-        Returns simulation dataframe sorted by objective value
-        '''
+        """ Run `self.solve` for many initial values.
+
+        This function is the one called when running estimation in parallel.
+
+        Args:
+            rank (int): Process number in parallelized computing.
+
+        Returns:
+            DataFrame: simulation dataframe sorted by objective value
+        """
         # Get initial values
-        x0 = self.initial_cond(len_sim, perturb, full_vars)
+        x0 = self.initial_cond(len_sim, perturb, perturb_type, full_vars)
 
         data = self.solve( x0[0, :], max_iter=max_iter, full_vars=full_vars )
         for i in range(1, len_sim):
@@ -518,10 +587,12 @@ class Estimate(object):
 
 
     def get_best_result(self, results):
-        '''
+        """ Extract the best result from the estimation output.
+
+        Not sure if this is useful...
         results: pd.DataFrame. It is the output of the parallelized execution.
         returns the row with minimum objective function value.
-        '''
+        """
         r = results.sort_values('obj_val')
 
         # Discard results that are result in invalid numbers
@@ -531,12 +602,13 @@ class Estimate(object):
 
 
     def resolve(self, result):
-        '''
+        """
+        Again, not sure if this is useful...
         result: pd.DataFrame. Output of self.get_best_result
 
         Recursively digs into the coordinates results if the maximum number of
         iterations was reached. Otherwise it returns the best solution.
-        '''
+        """
         if result['status'].iloc[0] == -1:
             names = (['zeta']
                 + ['{0}_lng'.format(i) for i in self.df_unknown['id'].tolist()]
@@ -552,9 +624,12 @@ class Estimate(object):
 
 
     def full_to_short_i(self):
-        '''
-        returns the indices to select short varlist from full varlist
-        '''
+        """ Get the indices of elements of short `varlist` from full `varlist`.
+
+        Returns:
+            numpy.ndarray: the indices to select short varlist from full
+                varlist
+        """
         i = self.div_indices[True]
         res = np.concatenate(([0],
                               range(i['long_unknown_s'], i['long_e']),
@@ -565,9 +640,9 @@ class Estimate(object):
 
 
     def output_to_jhwi(self, output):
-        '''
+        """ DEPRECATED
         Returns the initial value to evaluate the MATLAB objective function.
-        '''
+        """
         varlist = output_to_varlist(output)
         # Go from sigma to zeta
         varlist[0] = varlist[0]/2
@@ -583,10 +658,10 @@ class Estimate(object):
 
 
     def get_variance_gmm(self, varlist, full_vars=False):
-        '''
-        Computes the variance-covariance matrix of the estimators according to
-        the GMM formula. (see notes.pdf)
-        '''
+        """ Get the GMM variance-covariance matrix of the estimators
+
+        Applies standard GMM formula. This function needs to be revised.
+        """
         errors = self.get_errors(varlist, full_vars)
 
         # Make column vector
@@ -613,10 +688,17 @@ class Estimate(object):
 
 
     def get_variance(self, varlist, var_type='white', full_vars=False):
-        '''
-        Computes the variance-covariance matrix of the estimators according to
-        the white formula. (see paper)
-        '''
+        """ Compute the variance-covariance matrix of the estimators.
+
+        It can be computed according to the White formula, or with
+        homoskedasticity.
+
+        Args:
+            var_type (str): One of 'white' or 'homo'.
+
+        Returns:
+            numpy.ndarray: The variance-covariance matrix of the estimators.
+        """
         errors = self.get_errors(varlist, full_vars)
 
         # Make column vector
@@ -658,12 +740,21 @@ class Estimate(object):
                               size=20000,
                               var_type='white',
                               full_vars=False):
-        '''
-        varlist is taken to be the point estimate vector.
+        """ Simulates contour data using the estimation results.
 
-        Gets the var_type variance matrix using varlist and simulates size
-        draws from a normal distribution with mean varlist and variance.
-        '''
+        Draws values from a normal distribution with mean equal to the
+        estimated parameters and variance-covariance matrix given by
+        `self.get_variance`.
+
+        Args:
+            varlist (numpy.ndarray): The mean. It should be the estimated
+                vector of parameters.
+            size (int): The number of draws from the normal distribution to
+                get.
+
+        Returns:
+            numpy.ndarray
+        """
         if full_vars:
             mean = varlist[self.full_to_short_i()]
         # Remove Kanes
@@ -695,10 +786,16 @@ class Estimate(object):
 
 
     def get_size(self, varlist, scale_kanes=False, theta=4.0):
-        '''
-        Returns the fundamental size of cities:
-            Size_i proportional to L_i T_i^(1/theta)
-        '''
+        """ Retrieve the fundamental size of cities.
+
+        Recall Size_i is proportional to L_i T_i^(1/theta).
+
+        Args:
+            theta (float): The trade elasticity parameter that is assumed away.
+
+        Returns:
+            numpy.ndarray: The fundamental size of cities
+        """
         # Unpack arguments
         zeta = varlist[0]
         i = self.div_indices[True]
@@ -726,14 +823,16 @@ class Estimate(object):
 
 
     def get_size_variance(self, varlist, scale_kanes=False, var_type='white'):
-        '''
+        """ Get the fundamental size variance-covariance matrix.
+
         Applies Delta Method to get the variance-covariance matrix of the city
         size estimates.
 
-        Return the variance-covariance matrix of sizes.
-        '''
+        Returns:
+            numpy.ndarray: The variance-covariance matrix of city sizes.
+        """
         def size_for_grad(v):
-            ''' get_size function for autograd '''
+            """ get_size function for autograd """
             return self.get_size(v)
 
         # Get Jacobian
@@ -758,11 +857,14 @@ class Estimate(object):
 
 
     def export_results(self, varlist):
-        '''
-        varlist is in jhwi format:
-        (zeta, useless, long_known, long_unknown, lat_known, lat_unknown, a)
+        """ Export the estimation results.
+
         Exports zeta.csv, coordinates.csv, cities.csv, simulation.csv
-        '''
+
+        Args:
+            varlist (numpy.ndarray): it is in jhwi format:
+        `(zeta, useless, long_known, long_unknown, lat_known, lat_unknown, a)`
+        """
         # 1. Fetch standard error of estimates
         varlist_cov_white = self.get_variance(varlist,
                                               var_type='white',
