@@ -555,9 +555,7 @@ class Estimate(object):
 
 
     def gen_data(self,
-                 len_sim,
-                 perturb,
-                 perturb_type = 'rigid',
+                 x0,
                  rank = None,
                  max_iter = 25000,
                  full_vars = False):
@@ -566,14 +564,16 @@ class Estimate(object):
         This function is the one called when running estimation in parallel.
 
         Args:
+            x0 (numpy.ndarray): The array of initial conditions. Each row is an
+                initial condition.
             rank (int): Process number in parallelized computing.
 
         Returns:
             DataFrame: simulation dataframe sorted by objective value
-        """
-        # Get initial values
-        x0 = self.initial_cond(len_sim, perturb, perturb_type, full_vars)
 
+        Warning:
+            Make sure `full_vars` is consistent with `x0`.
+        """
         data = self.solve( x0[0, :], max_iter=max_iter, full_vars=full_vars )
         for i in range(1, len_sim):
             i_val = x0[i, :]

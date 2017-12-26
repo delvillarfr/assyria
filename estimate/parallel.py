@@ -39,9 +39,11 @@ estimator = estimate.Estimate(e_type)
 
 # Generate estimation data and aggregate across processes
 
-est_data = estimator.gen_data(len_sim = simulations,
-                              perturb = 0.2,
-                              perturb_type = perturb_type,
+initial_conds = estimator.initial_cond(len_sim = simulations,
+                                       perturb = 0.2,
+                                       perturb_type = perturb_type)
+
+est_data = estimator.gen_data(initial_conds,
                               rank = rank+1,
                               max_iter = iters)
 
