@@ -259,7 +259,7 @@ class Estimate(object):
     def s_ij_model(self, zeta, alpha, distances):
         """ Compute the model-predicted trade shares.
 
-        The idea is to cast elements as matrix, add over `axis=0`,
+        The idea is to cast elements as matrix, add over `axis=1`,
         repeat the result by the number of cities less one, and divide
         elements by this new 1-dim array.
 
@@ -524,8 +524,7 @@ class Estimate(object):
                          'tol': 1e-8,
                          'acceptable_tol': 1e-7,
                          'acceptable_iter': 100,
-                         'max_iter': max_iter}#,
-                         #'print_level': 12}
+                         'max_iter': max_iter}
         for option in option_specs.keys():
             nlp.addOption(option, option_specs[option])
 
@@ -984,6 +983,7 @@ class Optimizer(Estimate):
         return self.sqerr_sum(varlist, full_vars = self.full_vars)
 
     def gradient(self, varlist):
+        #print(varlist)
         if self.full_vars:
             return self.grad_full_vars(varlist)
         else:

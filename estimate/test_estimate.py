@@ -717,3 +717,57 @@ def test_same_city_sizes():
     size_jhwi = pd.read_csv('./matlab_tests/data/city_size.csv',
                             header=None).values.flatten()
     np.testing.assert_array_equal(size_mine, size_jhwi)
+
+
+def test_reason_for_nan_in_IPOPT():
+    e = estimate.Estimate('directional')
+    input_short = pd.read_csv('./tests/data/nan_input2.csv',
+                              header=None).values.flatten()
+
+    i = e.div_indices[False]
+    input_long = np.concatenate(([input_short[0], 4],
+                                 e.df_known['long_x'].values.flatten(),
+                                 input_short[i['long_s']: i['long_e']],
+                                 e.df_known['lat_y'].values.flatten(),
+                                 input_short[i['lat_s']: i['lat_e']],
+                                 input_short[i['a_s']:]
+                               ))
+
+    # Unpack arguments
+    zeta = input_long[0]
+
+    i = e.div_indices[True]
+    lng_guess = input_long[i['long_s']: i['long_e']]
+    lat_guess = input_long[i['lat_s']: i['lat_e']]
+    alpha = input_long[i['a_s']:]
+
+    pd.DataFrame(np.column_stack((lng_guess, lat_guess)),
+             columns=['lng', 'lat']).to_csv('./tests/data/coordinates_nan.csv')
+
+    #assert len(lat_guess) == len(lng_guess)
+
+    s_ij_model = e.s_ij_model(zeta,
+                                 alpha,
+                                 e.fetch_dist(lat_guess,
+                                                 lng_guess,
+                                                 True)
+                                )
+
+    print('----------')
+    print(e.fetch_dist(lat_guess, lng_guess, True))
+    print('----------')
+    print(e.get_errors(input_short))
+    print('----------')
+    print(e.get_errors(input_long, full_vars=True))
+    print('----------')
+    print(e.sqerr_sum(input_short))
+    print('----------')
+    print(e.sqerr_sum(input_long, full_vars=True))
+    print('----------')
+    print(e.grad(input_short))
+    print('----------')
+    print(e.grad_full_vars(input_long))
+    print('----------')
+    e.solve(input_short, solver='mumps')
+    #e.solve(input_long, full_vars=True, solver='mumps')
+    k
