@@ -510,7 +510,8 @@ class Estimate(object):
 
         nlp = ipopt.problem( n=len(x0),
                              m=0,
-                             problem_obj=Optimizer(self.build_type),
+                             problem_obj=Optimizer(build_type=self.build_type,
+                                                   full_vars=full_vars),
                              lb=bounds[0],
                              ub=bounds[1] )
 
@@ -523,7 +524,8 @@ class Estimate(object):
                          'tol': 1e-8,
                          'acceptable_tol': 1e-7,
                          'acceptable_iter': 100,
-                         'max_iter': max_iter }
+                         'max_iter': max_iter}#,
+                         #'print_level': 12}
         for option in option_specs.keys():
             nlp.addOption(option, option_specs[option])
 
@@ -974,11 +976,15 @@ class Estimate(object):
 # Now define optimization problem for IPOPT
 class Optimizer(Estimate):
 
-    def __init__(self, build_type):
+    def __init__(self, build_type, full_vars):
         Estimate.__init__(self, build_type)
+        self.full_vars = full_vars
 
     def objective(self, varlist):
-        return self.sqerr_sum(varlist)
+        return self.sqerr_sum(varlist, full_vars = self.full_vars)
 
     def gradient(self, varlist):
-        return self.grad(varlist)
+        if self.full_vars:
+            return self.grad_full_vars(varlist)
+        else:
+            return self.grad(varlist)
