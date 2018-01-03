@@ -576,6 +576,7 @@ class Estimate(object):
             Make sure `full_vars` is consistent with `x0`.
         """
         data = self.solve( x0[0, :], max_iter=max_iter, full_vars=full_vars )
+        len_sim = x0.shape[0]
         for i in range(1, len_sim):
             i_val = x0[i, :]
             data = data.append( self.solve(i_val, full_vars=full_vars) )
