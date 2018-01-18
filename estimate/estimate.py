@@ -324,19 +324,25 @@ class Estimate(object):
         return np.dot(errors, errors)
 
 
-    def replace_id_coord(self, constr, drop_wahsusana=False):
+    def replace_id_coord(self, constr, drop_wahsusana=False, no_constr=False):
         """ Replaces the city id with its coordinates in the constraints data.
 
         Args:
             constr (DataFrame): Specifies upper and lower bounds for
                 coordinates of cities.
+            no_constr (bool): Whether or not to ignore the constraints.
+                Default is False.
+
         Returns:
             The constraints data with substituted coordinates.
         """
         constr = constr.copy()
+        v = ['lb_lambda', 'ub_lambda', 'lb_varphi', 'ub_varphi']
+
+        if no_constr:
+            constr[v] = np.nan
 
         if drop_wahsusana:
-            v = ['lb_lambda', 'ub_lambda', 'lb_varphi', 'ub_varphi']
             constr[v] = constr[v].replace('wa01', np.nan)
 
         (ids, lats, lngs) = (self.df_coordinates['id'].values,
@@ -367,12 +373,14 @@ class Estimate(object):
         return constr
 
 
-    def get_bounds(self, constr, full_vars=False):
+    def get_bounds(self, constr, full_vars=False, set_elasticity=None):
         """ Fetch the upper and lower bounds for all entries in `varlist`.
 
         Args:
             constr (DataFrame): Specifies upper and lower bounds for
                 coordinates of cities.
+            set_elasticity (float): An imposed distance elasticity of trade.
+                Optional.
 
         Returns:
             tuple: (lb, ub), where lb and ub are of type `list` for the bounds.
@@ -394,8 +402,12 @@ class Estimate(object):
         lb = num_vars * [-1.0e20]
         ub = num_vars * [1.0e20]
 
-        # zeta should be larger than zero
-        lb[0] = 0.0
+        if set_elasticity != None:
+            lb[0] = set_elasticity
+            ub[0] = set_elasticity
+        else:
+            # zeta should be larger than zero
+            lb[0] = 0.0
 
 
         i = self.div_indices[full_vars]
@@ -460,7 +472,7 @@ class Estimate(object):
             lats = self.df_unknown['lat_y'].values
             longs = self.df_unknown['long_x'].values
         x0 = np.concatenate((zeta, longs, lats, alphas))
-        print(x0)
+        #print(x0)
 
         # Perturb it
         if perturb != None:
@@ -472,7 +484,7 @@ class Estimate(object):
                 p = np.random.uniform(1-perturb,
                                       1+perturb,
                                       size=(len_sim, x0.shape[1]))
-            print(p)
+            #print(p)
             x0 = x0*p
 
         return x0
@@ -483,7 +495,9 @@ class Estimate(object):
               constraint_type = 'static',
               max_iter = 25000,
               full_vars = False,
-              solver='ma57'):
+              solver='ma57',
+              set_elasticity=None,
+              no_constr=False):
         """ Solve the sum of squared distances minimization problem with IPOPT.
 
         Args:
@@ -498,15 +512,22 @@ class Estimate(object):
         """
         # Set bounds
         if constraint_type == 'static':
-            constr = self.replace_id_coord(self.df_constr_stat)
+            constr = self.replace_id_coord(self.df_constr_stat,
+                                           no_constr=no_constr)
         elif constraint_type == 'dynamic':
-            constr = self.replace_id_coord(self.df_constr_dyn)
+            constr = self.replace_id_coord(self.df_constr_dyn,
+                                           no_constr=no_constr)
         else:
             raise ValueError("Please specify the constraint type to be "
                              + "'static' or 'dynamic'")
-        bounds = self.get_bounds(constr, full_vars)
+        bounds = self.get_bounds(constr, full_vars, set_elasticity)
 
         assert len(bounds[0]) == len(x0)
+        #print('Low bound:')
+        #print(bounds[0])
+        #print('High bound:')
+        #print(bounds[1])
+        #print('max_iter:' + str(max_iter))
 
         nlp = ipopt.problem( n=len(x0),
                              m=0,
@@ -559,7 +580,9 @@ class Estimate(object):
                  x0,
                  rank = None,
                  max_iter = 25000,
-                 full_vars = False):
+                 full_vars = False,
+                 set_elasticity=None,
+                 no_constr=False):
         """ Run `self.solve` for many initial values.
 
         This function is the one called when running estimation in parallel.
@@ -575,11 +598,19 @@ class Estimate(object):
         Warning:
             Make sure `full_vars` is consistent with `x0`.
         """
-        data = self.solve( x0[0, :], max_iter=max_iter, full_vars=full_vars )
+        data = self.solve( x0[0, :],
+                           max_iter=max_iter,
+                           full_vars=full_vars,
+                           set_elasticity=set_elasticity,
+                           no_constr=no_constr)
         len_sim = x0.shape[0]
         for i in range(1, len_sim):
             i_val = x0[i, :]
-            data = data.append( self.solve(i_val, full_vars=full_vars) )
+            data = data.append( self.solve(i_val,
+                                           max_iter = max_iter,
+                                           full_vars = full_vars,
+                                           set_elasticity = set_elasticity,
+                                           no_constr = no_constr) )
 
         if rank != None:
             data['process'] = rank
