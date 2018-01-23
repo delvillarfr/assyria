@@ -9,14 +9,14 @@ pd.set_option('precision',15)
 accuracy = 8
 
 def test_iticount_imports_is_composed_solely_of_cities_in_coordinates():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     cities_i = np.sort( e.df_iticount['id_i'].unique() )
     np.testing.assert_array_equal( cities_i,
                                    np.sort(e.df_coordinates['id'].values) )
 
 
 def test_iticount_exports_is_composed_solely_of_cities_in_coordinates():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     cities_j = np.sort( e.df_iticount['id_j'].unique() )
     np.testing.assert_array_equal( cities_j,
                                    np.sort(e.df_coordinates['id'].values) )
@@ -24,27 +24,27 @@ def test_iticount_exports_is_composed_solely_of_cities_in_coordinates():
 
 def test_iticount_has_all_possible_city_combinations():
     ''' Meaningful only if previous two tests pass '''
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     assert len(e.df_iticount) == (len(e.df_coordinates)
                                   * (len(e.df_coordinates)-1))
 
 
 def test_same_known_and_unknown_cities_dir():
     ''' 15 (11) (un)known cities, acc to line 73 of main_script_directional.m '''
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     assert len(e.df_unknown) == 11
     assert len(e.df_known) == 15
 
 
 def test_same_known_and_unknown_cities_nondir():
     ''' Amkuwa (known) and Ursu (unknown) enter the non-directional analysis.'''
-    e = estimate.Estimate('non_directional')
+    e = estimate.EstimateAncient('non_directional')
     assert len(e.df_unknown) == 12
     assert len(e.df_known) == 16
 
 
 def test_same_constraints_after_coord_replace_directional_dir():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     replaced_dyn = e.replace_id_coord(e.df_constr_dyn)
     replaced_stat = e.replace_id_coord(e.df_constr_stat)
     replaced_no = e.replace_id_coord(e.df_constr_stat, no_constr=True)
@@ -55,12 +55,12 @@ def test_same_constraints_after_coord_replace_directional_dir():
 
 
 def test_same_distances_with_haversine_approx_and_euclidean_dist():
-    e = estimate.Estimate('directional')
-    coords = pd.read_csv('./tests/data/coords_sample.csv')
+    e = estimate.EstimateAncient('directional')
+    coords = pd.read_csv('./tests/ancient/data/coords_sample.csv')
     dist_mine = e.haversine_approx(coords[['lati', 'longi']].values,
                                    coords[['latj', 'longj']].values)
 
-    dist_jhwi = pd.read_csv('./tests/data/distances_sample.csv')
+    dist_jhwi = pd.read_csv('./tests/ancient/data/distances_sample.csv')
 
     np.testing.assert_array_almost_equal(dist_jhwi.values,
                                          dist_mine.reshape((500,1)),
@@ -68,12 +68,12 @@ def test_same_distances_with_haversine_approx_and_euclidean_dist():
 
 
 def test_same_distances_with_haversine_approx_and_euclidean_dist_sq():
-    e = estimate.Estimate('directional')
-    coords = pd.read_csv('./tests/data/coords_sample.csv')
+    e = estimate.EstimateAncient('directional')
+    coords = pd.read_csv('./tests/ancient/data/coords_sample.csv')
     dist_mine = (e.haversine_approx(coords[['lati', 'longi']].values,
                                     coords[['latj', 'longj']].values))**2
 
-    dist_jhwi = pd.read_csv('./tests/data/distances_sq_sample.csv')
+    dist_jhwi = pd.read_csv('./tests/ancient/data/distances_sq_sample.csv')
 
     np.testing.assert_array_almost_equal(dist_jhwi.values,
                                          dist_mine.reshape((500,1)),
@@ -81,10 +81,10 @@ def test_same_distances_with_haversine_approx_and_euclidean_dist_sq():
 
 
 def test_coordinate_pairs_match_those_of_their_corresponding_iticount_entry_dir():
-    e = estimate.Estimate('directional')
-    lats = pd.read_csv('./tests/data/lats_rand_dir.csv')
+    e = estimate.EstimateAncient('directional')
+    lats = pd.read_csv('./tests/ancient/data/lats_rand_dir.csv')
     lats = lats.iloc[0, :].values
-    longs = pd.read_csv('./tests/data/longs_rand_dir.csv')
+    longs = pd.read_csv('./tests/ancient/data/longs_rand_dir.csv')
     longs = longs.iloc[0, :].values
 
     e.df_unknown['lat_y'] = lats
@@ -113,10 +113,10 @@ def test_coordinate_pairs_match_those_of_their_corresponding_iticount_entry_dir(
 
 
 def test_coordinate_pairs_match_those_of_their_corresponding_iticount_entry_nondir():
-    e = estimate.Estimate('non_directional')
-    lats = pd.read_csv('./tests/data/lats_rand_nondir.csv')
+    e = estimate.EstimateAncient('non_directional')
+    lats = pd.read_csv('./tests/ancient/data/lats_rand_nondir.csv')
     lats = lats.iloc[0, :].values
-    longs = pd.read_csv('./tests/data/longs_rand_nondir.csv')
+    longs = pd.read_csv('./tests/ancient/data/longs_rand_nondir.csv')
     longs = longs.iloc[0, :].values
 
     e.df_unknown['lat_y'] = lats
@@ -145,79 +145,79 @@ def test_coordinate_pairs_match_those_of_their_corresponding_iticount_entry_nond
 
 
 def test_same_fetched_distances_dir():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     zeta = 2
     #alpha has 26 entries, the num of cities.
     alpha = np.ones(26)
-    lats = pd.read_csv('./tests/data/lats_rand_dir.csv')
+    lats = pd.read_csv('./tests/ancient/data/lats_rand_dir.csv')
     lats = lats.iloc[0, :].values
-    longs = pd.read_csv('./tests/data/longs_rand_dir.csv')
+    longs = pd.read_csv('./tests/ancient/data/longs_rand_dir.csv')
     longs = longs.iloc[0, :].values
 
     distances_mine = e.fetch_dist(lats, longs).reshape((650,1))
-    distances_jhwi = pd.read_csv('./tests/data/distances_rand_dir.csv')
+    distances_jhwi = pd.read_csv('./tests/ancient/data/distances_rand_dir.csv')
     np.testing.assert_array_almost_equal(distances_mine,
                                          np.sqrt(distances_jhwi),
                                          decimal=accuracy)
 
 
 def test_same_fetched_distances_nondir():
-    e = estimate.Estimate('non_directional')
+    e = estimate.EstimateAncient('non_directional')
     zeta = 2
     #alpha has 26 entries, the num of cities.
     alpha = np.ones(26)
-    lats = pd.read_csv('./tests/data/lats_rand_nondir.csv')
+    lats = pd.read_csv('./tests/ancient/data/lats_rand_nondir.csv')
     lats = lats.iloc[0, :].values
-    longs = pd.read_csv('./tests/data/longs_rand_nondir.csv')
+    longs = pd.read_csv('./tests/ancient/data/longs_rand_nondir.csv')
     longs = longs.iloc[0, :].values
 
     distances_mine = e.fetch_dist(lats, longs).reshape((756,1))
-    distances_jhwi = pd.read_csv('./tests/data/distances_rand_nondir.csv')
+    distances_jhwi = pd.read_csv('./tests/ancient/data/distances_rand_nondir.csv')
     np.testing.assert_array_almost_equal(distances_mine,
                                          np.sqrt(distances_jhwi),
                                          decimal=accuracy)
 
 
 def test_same_s_ij_model_directional_dir():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     zeta = 2
     #alpha has 26 entries, the num of cities.
     alpha = np.ones(26)
-    lats = pd.read_csv('./tests/data/lats_rand_dir.csv')
+    lats = pd.read_csv('./tests/ancient/data/lats_rand_dir.csv')
     lats = lats.iloc[0, :].values
-    longs = pd.read_csv('./tests/data/longs_rand_dir.csv')
+    longs = pd.read_csv('./tests/ancient/data/longs_rand_dir.csv')
     longs = longs.iloc[0, :].values
 
     dists = e.fetch_dist(lats, longs)
 
     sij_mine = e.s_ij_model(zeta, alpha, dists).reshape((650, 1))
-    sij_jhwi = pd.read_csv('./tests/data/sij_rand_dir.csv')
+    sij_jhwi = pd.read_csv('./tests/ancient/data/sij_rand_dir.csv')
     np.testing.assert_array_almost_equal(sij_mine,
                                          sij_jhwi,
                                          decimal=accuracy)
 
 
 def test_same_s_ij_model_directional_nondir():
-    e = estimate.Estimate('non_directional')
+    e = estimate.EstimateAncient('non_directional')
     zeta = 2
     #alpha has 28 entries, the num of cities.
     alpha = np.ones(28)
-    lats = pd.read_csv('./tests/data/lats_rand_nondir.csv')
+    lats = pd.read_csv('./tests/ancient/data/lats_rand_nondir.csv')
     lats = lats.iloc[0, :].values
-    longs = pd.read_csv('./tests/data/longs_rand_nondir.csv')
+    longs = pd.read_csv('./tests/ancient/data/longs_rand_nondir.csv')
     longs = longs.iloc[0, :].values
 
     dists = e.fetch_dist(lats, longs)
 
     sij_mine = e.s_ij_model(zeta, alpha, dists).reshape((756, 1))
-    sij_jhwi = pd.read_csv('./tests/data/sij_rand_nondir.csv')
+    sij_jhwi = pd.read_csv('./tests/ancient/data/sij_rand_nondir.csv')
     np.testing.assert_array_almost_equal(sij_mine,
                                          sij_jhwi,
                                          decimal=accuracy)
 
 
 def test_full_to_short_varlist():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     input_full = np.concatenate(( [0, 1],
                                   2*np.ones(e.num_cities_known),
                                   3*np.ones(e.num_cities_unknown),
@@ -234,15 +234,15 @@ def test_full_to_short_varlist():
     np.testing.assert_array_equal(input_short,
                                   input_short_mine)
     ## In case you are still not convinced: manual check.
-    #inputs = pd.read_csv('./tests/data/inputs_dir.csv')
+    #inputs = pd.read_csv('./tests/ancient/data/inputs_dir.csv')
     #i = inputs.iloc[0, :].values
     #input_s = i[e.full_to_short_i()]
     #pd.DataFrame(input_s).to_csv('row1.csv')
 
 
 def test_error_equivalence_full_vars_vs_few_vars():
-    e = estimate.Estimate('directional')
-    inputs = pd.read_csv('./tests/data/inputs_full_vs_few.csv',
+    e = estimate.EstimateAncient('directional')
+    inputs = pd.read_csv('./tests/ancient/data/inputs_full_vs_few.csv',
             header=None)
     errors = np.empty((1001, 650))
     errors_full = np.empty((1001, 650))
@@ -257,10 +257,10 @@ def test_error_equivalence_full_vars_vs_few_vars():
 
 
 def test_same_bounds_to_ipopt_dir_static():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     bounds = e.get_bounds(e.replace_id_coord(e.df_constr_stat), full_vars=True)
 
-    bounds_jhwi = pd.read_csv('./tests/data/bounds_dir_stat.csv')
+    bounds_jhwi = pd.read_csv('./tests/ancient/data/bounds_dir_stat.csv')
     bounds_jhwi = bounds_jhwi.replace(np.inf, 1.0e20)
 
     np.testing.assert_array_almost_equal(np.array(bounds[0]),
@@ -272,10 +272,10 @@ def test_same_bounds_to_ipopt_dir_static():
 
 
 def test_same_bounds_to_ipopt_nondir_static():
-    e = estimate.Estimate('non_directional')
+    e = estimate.EstimateAncient('non_directional')
     bounds = e.get_bounds(e.replace_id_coord(e.df_constr_stat), full_vars=True)
 
-    bounds_jhwi = pd.read_csv('./tests/data/bounds_nondir_stat.csv')
+    bounds_jhwi = pd.read_csv('./tests/ancient/data/bounds_nondir_stat.csv')
     bounds_jhwi = bounds_jhwi.replace(np.inf, 1.0e20)
 
     np.testing.assert_array_almost_equal(np.array(bounds[0]),
@@ -287,34 +287,34 @@ def test_same_bounds_to_ipopt_nondir_static():
 
 
 def test_same_initial_condition_dir():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     theta0_mine = e.initial_cond(full_vars=True)
     # zeta is one half sigma
     theta0_mine[0] = theta0_mine[0]/2
-    theta0_jhwi = pd.read_csv('./tests/data/theta0_dir.csv')
+    theta0_jhwi = pd.read_csv('./tests/ancient/data/theta0_dir.csv')
     np.testing.assert_array_almost_equal(theta0_mine,
                                          theta0_jhwi.values.flatten(),
                                          decimal=accuracy)
 
 
 def test_same_initial_condition_nondir():
-    e = estimate.Estimate('non_directional')
+    e = estimate.EstimateAncient('non_directional')
     theta0_mine = e.initial_cond(full_vars=True)
     # zeta is one half sigma
     theta0_mine[0] = theta0_mine[0]/2
-    theta0_jhwi = pd.read_csv('./tests/data/theta0_nondir.csv')
+    theta0_jhwi = pd.read_csv('./tests/ancient/data/theta0_nondir.csv')
     np.testing.assert_array_almost_equal(theta0_mine,
                                          theta0_jhwi.values.flatten(),
                                          decimal=accuracy)
 
 
 def test_same_sqerr_sum_dir():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     zeta = [2]
     #alpha has 26 entries, the num of cities.
     alpha = np.ones(26).tolist()
-    lats = pd.read_csv('./tests/data/lats_rand_dir.csv')
-    longs = pd.read_csv('./tests/data/longs_rand_dir.csv')
+    lats = pd.read_csv('./tests/ancient/data/lats_rand_dir.csv')
+    longs = pd.read_csv('./tests/ancient/data/longs_rand_dir.csv')
 
     sqerr_mine = np.ones((100, 1))
     for i in range(100):
@@ -322,19 +322,19 @@ def test_same_sqerr_sum_dir():
         lng_guess = longs.iloc[i, :].tolist()
         sqerr_mine[i] = e.sqerr_sum(zeta + lng_guess + lat_guess + alpha)
 
-    sqerr_jhwi = pd.read_csv('./tests/data/sqerr_rand_dir.csv').values
+    sqerr_jhwi = pd.read_csv('./tests/ancient/data/sqerr_rand_dir.csv').values
     np.testing.assert_array_almost_equal(sqerr_mine,
                                          sqerr_jhwi,
                                          decimal=accuracy)
 
 
 def test_same_sqerr_sum_nondir():
-    e = estimate.Estimate('non_directional')
+    e = estimate.EstimateAncient('non_directional')
     zeta = [2]
     #alpha has 28 entries, the num of cities.
     alpha = np.ones(28).tolist()
-    lats = pd.read_csv('./tests/data/lats_rand_nondir.csv')
-    longs = pd.read_csv('./tests/data/longs_rand_nondir.csv')
+    lats = pd.read_csv('./tests/ancient/data/lats_rand_nondir.csv')
+    longs = pd.read_csv('./tests/ancient/data/longs_rand_nondir.csv')
 
     sqerr_mine = np.ones((100, 1))
     for i in range(100):
@@ -342,20 +342,20 @@ def test_same_sqerr_sum_nondir():
         lng_guess = longs.iloc[i, :].tolist()
         sqerr_mine[i] = e.sqerr_sum(zeta + lng_guess + lat_guess + alpha)
 
-    sqerr_jhwi = pd.read_csv('./tests/data/sqerr_rand_nondir.csv').values
+    sqerr_jhwi = pd.read_csv('./tests/ancient/data/sqerr_rand_nondir.csv').values
     np.testing.assert_array_almost_equal(sqerr_mine,
                                          sqerr_jhwi,
                                          decimal=accuracy)
 
 
 def test_same_sqerr_sum_full_vars_dir():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     # Add useless param
     zeta = [2, 2]
     #alpha has 26 entries, the num of cities.
     alpha = np.ones(26).tolist()
-    lats = pd.read_csv('./tests/data/lats_rand_dir.csv')
-    longs = pd.read_csv('./tests/data/longs_rand_dir.csv')
+    lats = pd.read_csv('./tests/ancient/data/lats_rand_dir.csv')
+    longs = pd.read_csv('./tests/ancient/data/longs_rand_dir.csv')
 
     lats_known = e.df_known['lat_y'].values
     lats_known = pd.DataFrame(np.tile(lats_known, (100, 1)))
@@ -372,20 +372,20 @@ def test_same_sqerr_sum_full_vars_dir():
         sqerr_mine[i] = e.sqerr_sum(zeta + lng_guess + lat_guess + alpha,
                                    full_vars=True)
 
-    sqerr_jhwi = pd.read_csv('./tests/data/sqerr_rand_dir.csv').values
+    sqerr_jhwi = pd.read_csv('./tests/ancient/data/sqerr_rand_dir.csv').values
     np.testing.assert_array_almost_equal(sqerr_mine,
                                          sqerr_jhwi,
                                          decimal=accuracy)
 
 
 def test_same_sqerr_sum_full_vars_nondir():
-    e = estimate.Estimate('non_directional')
+    e = estimate.EstimateAncient('non_directional')
     # Add useless param
     zeta = [2, 2]
     #alpha has 26 entries, the num of cities.
     alpha = np.ones(28).tolist()
-    lats = pd.read_csv('./tests/data/lats_rand_nondir.csv')
-    longs = pd.read_csv('./tests/data/longs_rand_nondir.csv')
+    lats = pd.read_csv('./tests/ancient/data/lats_rand_nondir.csv')
+    longs = pd.read_csv('./tests/ancient/data/longs_rand_nondir.csv')
 
     lats_known = e.df_known['lat_y'].values
     lats_known = pd.DataFrame(np.tile(lats_known, (100, 1)))
@@ -402,18 +402,18 @@ def test_same_sqerr_sum_full_vars_nondir():
         sqerr_mine[i] = e.sqerr_sum(zeta + lng_guess + lat_guess + alpha,
                                    full_vars=True)
 
-    sqerr_jhwi = pd.read_csv('./tests/data/sqerr_rand_nondir.csv').values
+    sqerr_jhwi = pd.read_csv('./tests/ancient/data/sqerr_rand_nondir.csv').values
     np.testing.assert_array_almost_equal(sqerr_mine,
                                          sqerr_jhwi,
                                          decimal=accuracy)
 
 
 def test_same_gradients_at_initial_coords_dir():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     varlist = e.initial_cond(full_vars=True)
     grad_mine = e.grad_full_vars(varlist)
 
-    grad_jhwi = pd.read_csv('./tests/data/gradient0_dir.csv')
+    grad_jhwi = pd.read_csv('./tests/ancient/data/gradient0_dir.csv')
     grad_jhwi = grad_jhwi.values.flatten()
 
     # sigma is one half zeta
@@ -425,11 +425,11 @@ def test_same_gradients_at_initial_coords_dir():
 
 
 def test_same_gradients_at_initial_coords_nondir():
-    e = estimate.Estimate('non_directional')
+    e = estimate.EstimateAncient('non_directional')
     varlist = e.initial_cond(full_vars=True)
     grad_mine = e.grad_full_vars(varlist)
 
-    grad_jhwi = pd.read_csv('./tests/data/gradient0_nondir.csv')
+    grad_jhwi = pd.read_csv('./tests/ancient/data/gradient0_nondir.csv')
     grad_jhwi = grad_jhwi.values.flatten()
 
     # sigma is one half zeta
@@ -441,8 +441,8 @@ def test_same_gradients_at_initial_coords_nondir():
 
 
 def test_many_inputs_grad_and_objective_dir():
-    e = estimate.Estimate('directional')
-    inputs = pd.read_csv('./tests/data/inputs_dir.csv')
+    e = estimate.EstimateAncient('directional')
+    inputs = pd.read_csv('./tests/ancient/data/inputs_dir.csv')
     # Sigma to zeta
     inputs.iloc[:, 0] = inputs.iloc[:, 0]*2
     grads_mine = np.empty((1000, 80))
@@ -452,8 +452,8 @@ def test_many_inputs_grad_and_objective_dir():
         obj_mine[i] = e.sqerr_sum(inp, full_vars = True)
         grads_mine[i, :] = e.grad_full_vars(inp)
 
-    obj_jhwi = pd.read_csv('./tests/data/inputs_objective_dir.csv').values
-    grads_jhwi = pd.read_csv('./tests/data/inputs_gradients_dir.csv').values
+    obj_jhwi = pd.read_csv('./tests/ancient/data/inputs_objective_dir.csv').values
+    grads_jhwi = pd.read_csv('./tests/ancient/data/inputs_gradients_dir.csv').values
     grads_jhwi[:, 0] = grads_jhwi[:, 0]/2
     np.testing.assert_array_almost_equal(obj_mine,
                                          obj_jhwi,
@@ -464,8 +464,8 @@ def test_many_inputs_grad_and_objective_dir():
 
 
 def test_many_inputs_grad_and_objective_nondir():
-    e = estimate.Estimate('non_directional')
-    inputs = pd.read_csv('./tests/data/inputs_nondir.csv')
+    e = estimate.EstimateAncient('non_directional')
+    inputs = pd.read_csv('./tests/ancient/data/inputs_nondir.csv')
     # Sigma to zeta
     inputs.iloc[:, 0] = inputs.iloc[:, 0]*2
     grads_mine = np.empty((1000, 86))
@@ -475,8 +475,8 @@ def test_many_inputs_grad_and_objective_nondir():
         obj_mine[i] = e.sqerr_sum(inp, full_vars = True)
         grads_mine[i, :] = e.grad_full_vars(inp)
 
-    obj_jhwi = pd.read_csv('./tests/data/inputs_objective_nondir.csv').values
-    grads_jhwi = pd.read_csv('./tests/data/inputs_gradients_nondir.csv').values
+    obj_jhwi = pd.read_csv('./tests/ancient/data/inputs_objective_nondir.csv').values
+    grads_jhwi = pd.read_csv('./tests/ancient/data/inputs_gradients_nondir.csv').values
     grads_jhwi[:, 0] = grads_jhwi[:, 0]/2
 
     np.testing.assert_array_almost_equal(obj_mine,
@@ -488,8 +488,8 @@ def test_many_inputs_grad_and_objective_nondir():
 
 
 def test_same_objective_at_optimal_point():
-    e = estimate.Estimate('directional')
-    theta = pd.read_csv('./tests/data/theta_firststage_plot.csv',
+    e = estimate.EstimateAncient('directional')
+    theta = pd.read_csv('./tests/ancient/data/theta_firststage_plot.csv',
                         header=None)
     theta = theta.values.flatten()
     # sigma to zeta
@@ -499,7 +499,7 @@ def test_same_objective_at_optimal_point():
     grad_mine = e.grad_full_vars(theta)
     grad_mine[0] = grad_mine[0]*2
 
-    vals_jhwi = pd.read_csv('./tests/data/result_obj_grad_dir.csv')
+    vals_jhwi = pd.read_csv('./tests/ancient/data/result_obj_grad_dir.csv')
     obj_jhwi = vals_jhwi.iat[0, 0]
     grad_jhwi = vals_jhwi.drop('obj', axis=1).values.flatten()
 
@@ -534,8 +534,8 @@ def gen_test_inputs(l=1000, full_vars=False, directional=True):
 
 
 def test_same_errors():
-    e = estimate.Estimate('directional')
-    inputs = pd.read_csv('./tests/data/inputs_dir.csv')
+    e = estimate.EstimateAncient('directional')
+    inputs = pd.read_csv('./tests/ancient/data/inputs_dir.csv')
     # Sigma to zeta
     inputs.iloc[:, 0] = inputs.iloc[:, 0]*2
     errors_mine = np.empty((1000, 650))
@@ -543,7 +543,7 @@ def test_same_errors():
         inp = inputs.iloc[i, :].values
         errors_mine[i, :] = e.get_errors(inp, full_vars=True)
 
-    errors_jhwi = pd.read_csv('./tests/data/inputs_errors_dir.csv').values
+    errors_jhwi = pd.read_csv('./tests/ancient/data/inputs_errors_dir.csv').values
     #errors_jhwi[:, 0] = errors_jhwi[:, 0]/2
     np.testing.assert_array_almost_equal(errors_mine,
                                          errors_jhwi,
@@ -551,8 +551,8 @@ def test_same_errors():
 
 
 #def test_same_error_jacobian_few_vars():
-#    e = estimate.Estimate('directional')
-#    results = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
+#    e = estimate.EstimateAncient('directional')
+#    results = (pd.read_csv('./tests/ancient/data/theta_firststage_plot.csv',
 #                           header=None)
 #                 .values
 #                 .flatten()
@@ -565,7 +565,7 @@ def test_same_errors():
 #
 #    jac_mine = e.jac_errors(inp)
 #
-#    jac_jhwi = pd.read_csv('./tests/data/jacobian_errors_full.csv',
+#    jac_jhwi = pd.read_csv('./tests/ancient/data/jacobian_errors_full.csv',
 #                           header=None).values
 #    # first column must be twice the size of mine
 #    jac_jhwi[:, 0] = jac_jhwi[:, 0]/2
@@ -580,8 +580,8 @@ def test_same_errors():
 
 
 def test_same_error_jacobian_full_vars():
-    e = estimate.Estimate('directional')
-    results = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
+    e = estimate.EstimateAncient('directional')
+    results = (pd.read_csv('./tests/ancient/data/theta_firststage_plot.csv',
                            header=None)
                  .values
                  .flatten()
@@ -592,7 +592,7 @@ def test_same_error_jacobian_full_vars():
 
     jac_mine = e.jac_errors_full_vars(np.float64(results))
 
-    jac_jhwi = pd.read_csv('./tests/data/jacobian_errors_full.csv',
+    jac_jhwi = pd.read_csv('./tests/ancient/data/jacobian_errors_full.csv',
                            header=None).values
     # first column must be twice the size of mine
     jac_jhwi[:, 0] = jac_jhwi[:, 0]/2
@@ -607,8 +607,8 @@ def test_same_error_jacobian_full_vars():
 #    I KNOW THIS BECAUSE THAT theta CORRESPONDS TO ROW 1 TESTED IN
 #    test_error_equivalence_full_vars_vs_few_vars()
 #    '''
-#    e = estimate.Estimate('directional')
-#    results = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
+#    e = estimate.EstimateAncient('directional')
+#    results = (pd.read_csv('./tests/ancient/data/theta_firststage_plot.csv',
 #                           header=None)
 #                 .values
 #                 .flatten()
@@ -632,8 +632,8 @@ def test_same_error_jacobian_full_vars():
 
 #def test_error_jacobian_equivalence():
 #    ''' Read docstring of previous test. '''
-#    e = estimate.Estimate('directional')
-#    results = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
+#    e = estimate.EstimateAncient('directional')
+#    results = (pd.read_csv('./tests/ancient/data/theta_firststage_plot.csv',
 #                           header=None)
 #                 .values
 #                 .flatten()
@@ -657,9 +657,9 @@ def test_same_error_jacobian_full_vars():
 
 def test_same_variance_matrix():
     ''' One value is different with 7 decimals... '''
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
 
-    varlist = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
+    varlist = (pd.read_csv('./tests/ancient/data/theta_firststage_plot.csv',
                            header=None)
                  .values
                  .flatten()
@@ -668,7 +668,7 @@ def test_same_variance_matrix():
     varlist[0] = varlist[0]*2
     var_mine = e.get_variance(np.float64(varlist), full_vars = True)
 
-    var_jhwi = pd.read_csv('./tests/data/variance_white.csv',
+    var_jhwi = pd.read_csv('./tests/ancient/data/variance_white.csv',
                            header=None).values
     # Correct variance for first term
     var_jhwi[0, :] = 2*var_jhwi[0, :]
@@ -681,9 +681,9 @@ def test_same_variance_matrix():
 
 
 def test_simulate_contour_data():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
 
-    varlist = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
+    varlist = (pd.read_csv('./tests/ancient/data/theta_firststage_plot.csv',
                            header=None)
                  .values
                  .flatten()
@@ -695,9 +695,9 @@ def test_simulate_contour_data():
 
 
 def test_same_city_sizes():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
 
-    varlist = (pd.read_csv('./tests/data/theta_firststage_plot.csv',
+    varlist = (pd.read_csv('./tests/ancient/data/theta_firststage_plot.csv',
                            header=None)
                  .values
                  .flatten()
@@ -720,14 +720,14 @@ def test_same_city_sizes():
     #                                    lng_guess,
     #                                    True)
     #                      )
-    size_jhwi = pd.read_csv('./tests/data/city_size.csv',
+    size_jhwi = pd.read_csv('./tests/ancient/data/city_size.csv',
                             header=None).values.flatten()
     np.testing.assert_almost_equal(size_mine, size_jhwi)
 
 
 def test_reason_for_nan_in_IPOPT():
-    e = estimate.Estimate('directional')
-    input_short = pd.read_csv('./tests/data/nan_input2.csv',
+    e = estimate.EstimateAncient('directional')
+    input_short = pd.read_csv('./tests/ancient/data/nan_input2.csv',
                               header=None).values.flatten()
 
     i = e.div_indices[False]
@@ -748,7 +748,7 @@ def test_reason_for_nan_in_IPOPT():
     alpha = input_long[i['a_s']:]
 
     pd.DataFrame(np.column_stack((lng_guess, lat_guess)),
-             columns=['lng', 'lat']).to_csv('./tests/data/coordinates_nan.csv')
+             columns=['lng', 'lat']).to_csv('./tests/ancient/data/coordinates_nan.csv')
 
     #assert len(lat_guess) == len(lng_guess)
 
@@ -779,11 +779,10 @@ def test_reason_for_nan_in_IPOPT():
     #k
 
 def test_bounds_to_ipopt_dir():
-    e = estimate.Estimate('directional')
+    e = estimate.EstimateAncient('directional')
     replaced_no = e.replace_id_coord(e.df_constr_stat, no_constr=True)
     bounds = e.get_bounds(replaced_no,
                           full_vars=True,
                           set_elasticity=5.0)
     print(bounds[0])
     print(bounds[1])
-

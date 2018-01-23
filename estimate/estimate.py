@@ -25,84 +25,27 @@ config = ConfigParser.ConfigParser()
 ## file keys.ini should be in process.py parent directory.
 config.read(os.path.dirname(os.path.dirname(__file__)) + '/keys.ini')
 
-## Paths
-root = config.get('paths', 'root')
-root_jhwi = config.get('paths', 'root_jhwi')
-process = config.get('paths', 'process')
 
 
+class EstimateBase(object):
+    """ Base Class for main estimation procedures.
 
-class Estimate(object):
-    """ Class for estimation procedures.
+    Defines attributes and methods used later for
+    * Estimation with directional and non-directional ancient data
+    * Estimation with directional and non-directional modern (all,
+        ancient_system and ancient_system_matched) data.
 
-    Initializes the data used to be used:
+    ... and more
 
-    * loads processed datasets.
-    * sets coordinates in degrees.
-    * sets known and unknown coordinates datasets as separate attributes.
-    * saves the number of known and unknown cities
     * saves the gradient of the objective function as attribute, to avoid
         calling autograd multiple times.
     * saves the jacobian of errors
-    * saves the dividing indices to go from variable array to individual
-        components.
-    * saves other data to speed up self.tile_nodiag and self.get_errors
-
     Args:
         build_type (str): One of "directional" or "non-directional".
-        lat (tuple): Contains assumed lower and upper latitude bounds.
-        lng (tuple): Contains assumed lower and upper longitude bounds.
     """
 
-    def __init__(self, build_type, lat = (36, 42), lng = (27, 45)):
-        self.lat = lat
-        self.lng = lng
+    def __init__(self, build_type):
         self.build_type = build_type
-
-        # Load processed datasets
-        if build_type == 'directional':
-            self.df_iticount = pd.read_csv(root + process
-                                           + 'iticount_dir.csv')
-            self.df_coordinates = pd.read_csv(root + process
-                                              + 'coordinates_dir.csv')
-            self.df_constr_dyn = pd.read_csv(root + process
-                                             + 'constraints_dir_dyn.csv')
-            self.df_constr_stat = pd.read_csv(root + process
-                                              + 'constraints_dir_stat.csv')
-        elif build_type == 'non_directional':
-            self.df_iticount = pd.read_csv(root + process
-                                           + 'iticount_nondir.csv')
-            self.df_coordinates = pd.read_csv(root + process
-                                              + 'coordinates_nondir.csv')
-            self.df_constr_dyn = pd.read_csv(root + process
-                                             + 'constraints_nondir_dyn.csv')
-            self.df_constr_stat = pd.read_csv(root + process
-                                              + 'constraints_nondir_stat.csv')
-        else:
-            raise ValueError("Initialize class with 'directional' or "
-                             + "'non_directional'")
-
-        # Save number of cities
-        self.num_cities = len(self.df_coordinates)
-
-        # Set coordinates in degrees (this should be done in process)
-        for v in ['long_x', 'lat_y']:
-            self.df_coordinates[v] = np.rad2deg(self.df_coordinates[v].values,
-                                                dtype='float64')
-
-        # Known cities
-        self.df_known = self.df_coordinates.loc[
-            self.df_coordinates['cert'] < 3,
-            ['id', 'long_x', 'lat_y']
-        ]
-        # Lost cities
-        self.df_unknown = self.df_coordinates.loc[
-            self.df_coordinates['cert'] == 3,
-            ['id', 'long_x', 'lat_y']
-        ]
-
-        self.num_cities_known = len(self.df_known)
-        self.num_cities_unknown = len(self.df_unknown)
 
         # Automatic differentiation of objective and errors
 
@@ -112,49 +55,11 @@ class Estimate(object):
             """ This is the formulation for autograd. """
             return self.sqerr_sum(varlist)
         self.grad = grad(objective)
-        ### Using all vars
-        def objective_full_vars(varlist):
-            """ This is the formulation for autograd. """
-            return self.sqerr_sum(varlist, full_vars=True)
-        self.grad_full_vars = grad(objective_full_vars)
 
         ## Errors
         def error_autograd(v):
             return self.get_errors(v)
         self.jac_errors = jacobian(error_autograd)
-        ### Using all vars
-        def error_autograd_full_vars(v):
-            return self.get_errors(v, full_vars=True)
-        self.jac_errors_full_vars = jacobian(error_autograd_full_vars)
-
-        # Save indices to unpack argument of objective and gradient
-        # There is a set of indices if we are using the full set of coordinates
-        # as arguments, or if we use only the only the unknown cities
-        # coordinates as arguments.
-        self.div_indices = {
-            True: {'long_unknown_s': 2 + self.num_cities_known,
-                   'long_s': 2,
-                   'long_e': 2 + self.num_cities,
-                   'lat_unknown_s': 2 + self.num_cities + self.num_cities_known,
-                   'lat_s': 2 + self.num_cities,
-                   'lat_e': 2 + 2*self.num_cities,
-                   'a_s': 2 + 2*self.num_cities,
-                   'a_e': 2 + 3*self.num_cities},
-            False: {'long_s': 1,
-                    'long_e': 1 + self.num_cities_unknown,
-                    'lat_s': 1 + self.num_cities_unknown,
-                    'lat_e': 1 + 2*self.num_cities_unknown,
-                    'a_s': 1 + 2*self.num_cities_unknown,
-                    'a_e': 1 + 2*self.num_cities_unknown + self.num_cities}
-        }
-
-        # Save array index that views array of size len(self.df_coordinates)
-        # and selects off-diagonal elements. See self.tile_nodiag.
-        i = np.repeat(np.arange(1, self.num_cities), self.num_cities)
-        self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
-
-        # Save trade shares (to speed up self.get_errors)
-        self.df_shares = self.df_iticount['s_ij'].values
 
 
     def haversine_approx(self, coord_i, coord_j):
@@ -322,6 +227,128 @@ class Estimate(object):
         """
         errors = self.get_errors(varlist, full_vars)
         return np.dot(errors, errors)
+
+
+
+class EstimateAncient(EstimateBase):
+    """ Class for estimation procedures on ancient dataset.
+
+    Initializes the data used to be used:
+
+    * loads processed datasets.
+    * sets coordinates in degrees.
+    * sets known and unknown coordinates datasets as separate attributes.
+    * saves the number of known and unknown cities
+    * saves the gradient of the objective function as attribute, to avoid
+        calling autograd multiple times.
+    * saves the jacobian of errors
+    * saves the dividing indices to go from variable array to individual
+        components.
+    * saves other data to speed up self.tile_nodiag and self.get_errors
+
+    Args:
+        build_type (str): One of "directional" or "non-directional".
+        lat (tuple): Contains assumed lower and upper latitude bounds.
+        lng (tuple): Contains assumed lower and upper longitude bounds.
+    """
+
+    def __init__(self, build_type, lat = (36, 42), lng = (27, 45)):
+        EstimateBase.__init__(self, build_type)
+        self.lat = lat
+        self.lng = lng
+
+        ## Paths
+        root = config.get('paths', 'root')
+        process = config.get('paths', 'process_a')
+
+        # Load processed datasets
+        if build_type == 'directional':
+            self.df_iticount = pd.read_csv(root + process
+                                           + 'iticount_dir.csv')
+            self.df_coordinates = pd.read_csv(root + process
+                                              + 'coordinates_dir.csv')
+            self.df_constr_dyn = pd.read_csv(root + process
+                                             + 'constraints_dir_dyn.csv')
+            self.df_constr_stat = pd.read_csv(root + process
+                                              + 'constraints_dir_stat.csv')
+        elif build_type == 'non_directional':
+            self.df_iticount = pd.read_csv(root + process
+                                           + 'iticount_nondir.csv')
+            self.df_coordinates = pd.read_csv(root + process
+                                              + 'coordinates_nondir.csv')
+            self.df_constr_dyn = pd.read_csv(root + process
+                                             + 'constraints_nondir_dyn.csv')
+            self.df_constr_stat = pd.read_csv(root + process
+                                              + 'constraints_nondir_stat.csv')
+        else:
+            raise ValueError("Initialize class with 'directional' or "
+                             + "'non_directional'")
+
+        # Save number of cities
+        self.num_cities = len(self.df_coordinates)
+
+        # Set coordinates in degrees (this should be done in process)
+        for v in ['long_x', 'lat_y']:
+            self.df_coordinates[v] = np.rad2deg(self.df_coordinates[v].values,
+                                                dtype='float64')
+
+        # Known cities
+        self.df_known = self.df_coordinates.loc[
+            self.df_coordinates['cert'] < 3,
+            ['id', 'long_x', 'lat_y']
+        ]
+        # Lost cities
+        self.df_unknown = self.df_coordinates.loc[
+            self.df_coordinates['cert'] == 3,
+            ['id', 'long_x', 'lat_y']
+        ]
+
+        self.num_cities_known = len(self.df_known)
+        self.num_cities_unknown = len(self.df_unknown)
+
+        # Automatic differentiation of objective and errors
+
+        ## Objective
+        ### Using all vars
+        def objective_full_vars(varlist):
+            """ This is the formulation for autograd. """
+            return self.sqerr_sum(varlist, full_vars=True)
+        self.grad_full_vars = grad(objective_full_vars)
+
+        ## Errors
+        ### Using all vars
+        def error_autograd_full_vars(v):
+            return self.get_errors(v, full_vars=True)
+        self.jac_errors_full_vars = jacobian(error_autograd_full_vars)
+
+        # Save indices to unpack argument of objective and gradient
+        # There is a set of indices if we are using the full set of coordinates
+        # as arguments, or if we use only the only the unknown cities
+        # coordinates as arguments.
+        self.div_indices = {
+            True: {'long_unknown_s': 2 + self.num_cities_known,
+                   'long_s': 2,
+                   'long_e': 2 + self.num_cities,
+                   'lat_unknown_s': 2 + self.num_cities + self.num_cities_known,
+                   'lat_s': 2 + self.num_cities,
+                   'lat_e': 2 + 2*self.num_cities,
+                   'a_s': 2 + 2*self.num_cities,
+                   'a_e': 2 + 3*self.num_cities},
+            False: {'long_s': 1,
+                    'long_e': 1 + self.num_cities_unknown,
+                    'lat_s': 1 + self.num_cities_unknown,
+                    'lat_e': 1 + 2*self.num_cities_unknown,
+                    'a_s': 1 + 2*self.num_cities_unknown,
+                    'a_e': 1 + 2*self.num_cities_unknown + self.num_cities}
+        }
+
+        # Save array index that views array of size len(self.df_coordinates)
+        # and selects off-diagonal elements. See self.tile_nodiag.
+        i = np.repeat(np.arange(1, self.num_cities), self.num_cities)
+        self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
+
+        # Save trade shares (to speed up self.get_errors)
+        self.df_shares = self.df_iticount['s_ij'].values
 
 
     def replace_id_coord(self, constr, drop_wahsusana=False, no_constr=False):
@@ -531,7 +558,7 @@ class Estimate(object):
 
         nlp = ipopt.problem( n=len(x0),
                              m=0,
-                             problem_obj=Optimizer(build_type=self.build_type,
+                             problem_obj=OptimizerAncient(build_type=self.build_type,
                                                    full_vars=full_vars),
                              lb=bounds[0],
                              ub=bounds[1] )
@@ -788,8 +815,9 @@ class Estimate(object):
         Returns:
             numpy.ndarray
         """
+        mean = varlist.copy()
         if full_vars:
-            mean = varlist[self.full_to_short_i()]
+            mean = mean[self.full_to_short_i()]
         # Remove Kanes
         kanes_i = self.div_indices[False]['a_s'] + 1
         mean = np.delete(mean, kanes_i)
@@ -1000,15 +1028,437 @@ class Estimate(object):
 
 
 
+class EstimateModern(EstimateBase):
+    """ Class for estimation procedures on modern dataset.
+
+    Initializes the data used to be used:
+
+    * loads processed datasets.
+    * saves the dividing indices to go from variable array to individual
+        components.
+    * saves other data to speed up self.tile_nodiag and self.get_errors
+
+    Args:
+        build_type (str): One of "directional" or "non-directional".
+        source (str): One of "all", "ancient_system" or "matched".
+    """
+
+    def __init__(self, build_type, source):
+        EstimateBase.__init__(self, build_type)
+
+        self.source = source
+
+        ## Paths
+        root = config.get('paths', 'root')
+        process = config.get('paths', 'process_m')
+
+        # Load processed datasets
+        self.df_coordinates = pd.read_csv(root + process + self.source
+                                          + '/coordinates.csv')
+        if build_type == 'directional':
+            self.df_iticount = pd.read_csv(root + process + self.source
+                                           + '/estimation_data_directional.csv')
+        elif build_type == 'non_directional':
+            self.df_iticount = pd.read_csv(root + process + self.source
+                                           + '/estimation_data_nondirectional.csv')
+        else:
+            raise ValueError("Initialize class with 'directional' or "
+                             + "'non_directional'")
+
+        # Save number of cities
+        self.num_cities = len(self.df_coordinates)
+
+        # Save indices to unpack argument of objective and gradient
+        ## Note the useless variable is no longer included.
+        self.div_indices = {'a_s': 1, 'a_e': 1 + self.num_cities}
+
+        # Save trade shares (to speed up self.get_errors)
+        self.df_shares = self.df_iticount['s_ij'].values
+
+        # Save index (in varlist) of city that must be normalized to 100.
+        self.id_normalized = {'all': 38, 'ancient_system': 12, 'matched': 7}
+        self.index_normalized = (self.div_indices['a_s']
+                                 + self.id_normalized[self.source]
+                                 - 1)
+
+
+    def get_bounds(self, set_elasticity=None):
+        """ Fetch the upper and lower bounds for all entries in `varlist`.
+
+        Args:
+            set_elasticity (float): An imposed distance elasticity of trade.
+                Optional.
+
+        Returns:
+            tuple: (lb, ub), where lb and ub are of type `list` for the bounds.
+        """
+        num_vars = 1 + self.num_cities
+
+        # All variables should be positive
+        lb = num_vars * [0.0]
+        ub = num_vars * [1.0e20]
+
+        if set_elasticity != None:
+            lb[0] = set_elasticity
+            ub[0] = set_elasticity
+
+        # Normalize the city given in id_normalized to 100
+        lb[self.index_normalized] = 100.0
+        ub[self.index_normalized] = 100.0
+
+        return (lb, ub)
+
+
+    def initial_cond(self,
+                     len_sim=None,
+                     perturb=None,
+                     perturb_type='rigid'):
+        """ Gets initial condition(s) for `IPOPT`.
+
+        Args:
+            len_sim (int): Specifies the number of initial conditions to draw.
+            perturb (float): A percentage deviation from the default initial
+                value.
+            perturb_type (str): Type of perturbation on the default initial
+                value. If `'rigid'` then the whole initial value vector is
+                multiplied by a scalar. If `'flexible'` then each element of
+                the initial value vector is multiplied by a different scalar.
+                Default is `'rigid'`.
+
+        Returns:
+            numpy.ndarray: The default initial condition if perturb is not
+                specified, and an array with `len_sim` perturbed initial
+                conditions.
+        """
+        # Form default initial value
+        zeta = [2.0]
+        alphas = np.ones(self.num_cities)
+        x0 = np.concatenate((zeta, alphas))
+        #print(x0)
+
+        # Perturb it
+        if perturb != None:
+            x0 = np.tile(x0, (len_sim, 1))
+            if perturb_type == 'rigid':
+                p = np.random.uniform(1-perturb,
+                                      1+perturb,
+                                      size=(len_sim, 1))
+            elif perturb_type == 'flexible':
+                p = np.random.uniform(1-perturb,
+                                      1+perturb,
+                                      size=(len_sim, x0.shape[1]))
+            #print(p)
+            x0 = x0*p
+
+        return x0
+
+
+    def solve(self,
+              x0,
+              max_iter = 25000,
+              solver='ma57',
+              set_elasticity=None):
+        """ Solve the sum of squared distances minimization problem with IPOPT.
+
+        Args:
+            x0 (list): The initial value.
+            max_iter (int): Maximum iterations before IPOPT stops.
+            solver (str): Linear solver. 'ma57' is the default. If not
+                available, use 'mumps'.
+
+        Returns:
+            A one-row dataframe with optimization information.
+        """
+        # Set bounds
+        bounds = self.get_bounds(set_elasticity)
+
+        assert len(bounds[0]) == len(x0)
+        #print('Low bound:')
+        #print(bounds[0])
+        #print('High bound:')
+        #print(bounds[1])
+        #print('max_iter:' + str(max_iter))
+
+        nlp = ipopt.problem( n=len(x0),
+                             m=0,
+                             problem_obj=OptimizerModern(build_type=self.build_type),
+                             lb=bounds[0],
+                             ub=bounds[1] )
+
+        # Add IPOPT options (some jhwi options were default)
+        option_specs = { 'hessian_approximation': 'limited-memory',
+                         'linear_solver': solver,
+                         'limited_memory_max_history': 100,
+                         'limited_memory_max_skipping': 1,
+                         'mu_strategy': 'adaptive',
+                         'tol': 1e-8,
+                         'acceptable_tol': 1e-7,
+                         'acceptable_iter': 100,
+                         'max_iter': max_iter}
+        for option in option_specs.keys():
+            nlp.addOption(option, option_specs[option])
+
+        (x, info) = nlp.solve(x0)
+
+        # Set up variable names
+        alphas = ['{0}_a'.format(i) for i in self.df_coordinates['id'].tolist()]
+        headers = ['zeta'] + alphas
+
+        df = pd.DataFrame(data = [x], columns = headers)
+        df['obj_val'] = info['obj_val']
+        df['status'] = info['status']
+        df['status_msg'] = info['status_msg']
+        df['status_msg'] = df['status_msg'].str.replace(';', '')
+
+        #Add initial condition
+        for ival in range(len(x0)):
+            df['x0_'+str(ival)] = x0[ival]
+
+        return df
+
+
+    def gen_data(self,
+                 x0,
+                 rank = None,
+                 max_iter = 25000,
+                 set_elasticity=None):
+        """ Run `self.solve` for many initial values.
+
+        This function is the one called when running estimation in parallel.
+
+        Args:
+            x0 (numpy.ndarray): The array of initial conditions. Each row is an
+                initial condition.
+            rank (int): Process number in parallelized computing.
+
+        Returns:
+            DataFrame: simulation dataframe sorted by objective value
+        """
+        data = self.solve( x0[0, :],
+                           max_iter=max_iter,
+                           set_elasticity=set_elasticity)
+        len_sim = x0.shape[0]
+        for i in range(1, len_sim):
+            i_val = x0[i, :]
+            data = data.append( self.solve(i_val,
+                                           max_iter = max_iter,
+                                           set_elasticity = set_elasticity) )
+
+        if rank != None:
+            data['process'] = rank
+
+        # Sort
+        return data.sort_values('obj_val')
+
+
+    def get_variance_gmm(self, varlist):
+        """ Get the GMM variance-covariance matrix of the estimators
+
+        Applies standard GMM formula. This function needs to be revised.
+        """
+        errors = self.get_errors(varlist)
+
+        # Make column vector
+        errors = np.expand_dims(errors, 1)
+
+        # Evaluate errors jacobian at estimated parameter.
+        jac = self.jac_errors(varlist)
+
+        # Remove fixed a.
+        jac = np.delete(jac, self.index_normalized, axis=1)
+
+        #assert np.shape(jac) == (650, 48)
+
+        # Build variance-covariance matrix
+        bread_top = np.linalg.inv(np.dot(np.transpose(jac), jac))
+        ham = np.linalg.multi_dot((np.transpose(jac),
+                                   errors,
+                                   np.transpose(errors),
+                                   jac))
+        bread_bottom = bread_top
+
+        return np.linalg.multi_dot((bread_top, ham, bread_bottom))
+
+
+    def get_variance(self, varlist, var_type='white'):
+        """ Compute the variance-covariance matrix of the estimators.
+
+        It can be computed according to the White formula, or with
+        homoskedasticity.
+
+        Args:
+            var_type (str): One of 'white' or 'homo'.
+
+        Returns:
+            numpy.ndarray: The variance-covariance matrix of the estimators.
+        """
+        errors = self.get_errors(varlist)
+
+        # Make column vector
+        errors = np.expand_dims(errors, 1)
+
+        # Evaluate errors jacobian at estimated parameter.
+        jac = self.jac_errors(varlist)
+
+        # Remove fixed a
+        jac = np.delete(jac, self.index_normalized, axis=1)
+
+        # Build variance-covariance matrix, according to var_type
+        bread = np.linalg.inv(np.dot( np.transpose(jac), jac ))
+
+        if var_type == 'white':
+            ham = np.dot(np.transpose(jac * errors), jac * errors)
+            return np.linalg.multi_dot((bread, ham, bread))
+
+        elif var_type == 'homo':
+            return (np.sum(errors**2) / len(errors)) * bread
+
+        else:
+            raise ValueError("Please specify the variance type to be one of "
+                    + "'white' or 'homo'")
+
+
+    def get_size(self, varlist, scale_normalized=False, theta=4.0):
+        """ Retrieve the fundamental size of cities.
+
+        Recall Size_i is proportional to L_i T_i^(1/theta).
+
+        Args:
+            theta (float): The trade elasticity parameter that is assumed away.
+
+        Returns:
+            numpy.ndarray: The fundamental size of cities
+        """
+        # Unpack arguments
+        zeta = varlist[0]
+        i = self.div_indices
+        alpha = varlist[i['a_s']:]
+
+        distances = self.df_iticount['dist'].values
+
+        factor_1 = alpha**(1 + 1.0/theta)
+
+        ## Build summation
+        # This part draws from self.s_ij_model()
+        a = self.tile_nodiag(alpha)
+        elems = a * (distances ** (-zeta))
+        elems = np.reshape(elems, (self.num_cities, self.num_cities - 1))
+        # Add within-city component. Assumed within-city distance: 30 km.
+        own_factor = (30 ** (-zeta)) * alpha
+        factor_2 = np.sum(elems, axis = 1).flatten() + own_factor
+
+        sizes = factor_1 * factor_2
+        if scale_normalized:
+            sizes = 100 * sizes / sizes[self.id_normalized[self.source] - 1]
+        return sizes
+
+
+    def get_size_variance(self, varlist, scale_normalized=False, var_type='white'):
+        """ Get the fundamental size variance-covariance matrix.
+
+        Applies Delta Method to get the variance-covariance matrix of the city
+        size estimates.
+
+        Returns:
+            numpy.ndarray: The variance-covariance matrix of city sizes.
+        """
+        def size_for_grad(v):
+            """ get_size function for autograd """
+            return self.get_size(v)
+
+        # Get Jacobian
+        jac_size = jacobian(size_for_grad)
+        # Evaluate
+        j = jac_size(varlist)
+
+        ## Remove fixed a.
+        j = np.delete(j, self.index_normalized, axis=1)
+
+        var = self.get_variance(varlist, var_type=var_type)
+
+        return np.linalg.multi_dot((j, var, np.transpose(j)))
+
+
+    def export_results(self, varlist):
+        """ Export the estimation results.
+
+        Exports zeta.csv, coordinates.csv, cities.csv, simulation.csv
+
+        Args:
+            varlist (numpy.ndarray): it is in jhwi format: `(zeta, a)`
+        """
+        # 1. Fetch standard error of estimates
+        varlist_cov_white = self.get_variance(varlist,
+                                              var_type='white')
+        varlist_cov_homo = self.get_variance(varlist,
+                                             var_type='homo')
+        size_cov_white = self.get_size_variance(varlist, var_type='white')
+        size_cov_homo = self.get_size_variance(varlist, var_type='homo')
+
+        varlist_sd_white = np.sqrt( np.diag(varlist_cov_white) )
+        varlist_sd_homo = np.sqrt( np.diag(varlist_cov_homo) )
+        size_sd_white = np.sqrt( np.diag(size_cov_white) )
+        size_sd_homo = np.sqrt( np.diag(size_cov_homo) )
+
+        # 2. Unpack varlist arguments
+        zeta = varlist[0]
+        i = self.div_indices
+        alpha = varlist[i['a_s']:]
+
+        # 3. Save zeta.csv
+        df_zeta = pd.DataFrame([[zeta,
+                                 varlist_sd_white[0],
+                                 varlist_sd_homo[0]]], columns=['zeta',
+                                                                'zeta_sd_white',
+                                                                'zeta_sd_homo']
+                              )
+        df_zeta.to_csv('./estim_results/zeta.csv', index=False)
+
+        # 4. Save sizes and alphas (+ standard errors)
+        size = self.get_size(varlist)
+
+        alpha = varlist[i['a_s']:]
+        alpha_white = varlist_sd_white[i['a_s']:]
+        alpha_homo = varlist_sd_homo[i['a_s']:]
+
+        ## Insert missing s.e. for kanes in alpha and in sizes
+        alpha_white = np.insert(alpha_white,
+                                self.id_normalized[self.source] - 1,
+                                np.nan)
+        alpha_homo = np.insert(alpha_homo,
+                               self.id_normalized[self.source] - 1,
+                               np.nan)
+        ### These entries would otherwise be zero
+        #size_sd_white[1] = np.nan
+        #size_sd_homo[1] = np.nan
+
+        ids_city = self.df_coordinates['id'].values
+        city_array = np.column_stack((ids_city,
+                                      size,
+                                      size_sd_white,
+                                      size_sd_homo,
+                                      alpha,
+                                      alpha_white,
+                                      alpha_homo))
+        cities = pd.DataFrame( city_array,
+                               columns = ['id',
+                                          'size',
+                                          'size_sd_white',
+                                          'size_sd_homo',
+                                          'alpha',
+                                          'alpha_sd_white',
+                                          'alpha_sd_homo']
+                             )
+        cities.to_csv('./estim_results/cities.csv', index=False)
 
 
 
 
-# Now define optimization problem for IPOPT
-class Optimizer(Estimate):
+# Now define optimization problems for IPOPT
+class OptimizerAncient(EstimateAncient):
 
     def __init__(self, build_type, full_vars):
-        Estimate.__init__(self, build_type)
+        EstimateAncient.__init__(self, build_type)
         self.full_vars = full_vars
 
     def objective(self, varlist):
@@ -1020,3 +1470,16 @@ class Optimizer(Estimate):
             return self.grad_full_vars(varlist)
         else:
             return self.grad(varlist)
+
+
+class OptimizerModern(EstimateModern):
+
+    def __init__(self, build_type):
+        EstimateModern.__init__(self, build_type)
+
+    def objective(self, varlist):
+        return self.sqerr_sum(varlist)
+
+    def gradient(self, varlist):
+        #print(varlist)
+        return self.grad(varlist)

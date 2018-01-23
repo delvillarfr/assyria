@@ -33,7 +33,7 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-estimator = estimate.Estimate(e_type)
+estimator = estimate.EstimateAncient(e_type)
 
 
 
