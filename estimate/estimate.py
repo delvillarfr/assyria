@@ -1211,7 +1211,10 @@ class EstimateModern(EstimateBase):
 
         nlp = ipopt.problem( n=len(x0),
                              m=0,
-                             problem_obj=OptimizerModern(build_type=self.build_type),
+                             problem_obj = (
+                                 OptimizerModern(build_type = self.build_type,
+                                                 source = self.source)
+                                 ),
                              lb=bounds[0],
                              ub=bounds[1] )
 
@@ -1504,8 +1507,8 @@ class OptimizerAncient(EstimateAncient):
 
 class OptimizerModern(EstimateModern):
 
-    def __init__(self, build_type):
-        EstimateModern.__init__(self, build_type)
+    def __init__(self, build_type, source):
+        EstimateModern.__init__(self, build_type, source)
 
     def objective(self, varlist):
         return self.sqerr_sum(varlist)
