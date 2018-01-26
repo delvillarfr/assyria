@@ -187,35 +187,6 @@ class EstimateBase(object):
         return elems / denom
 
 
-    def get_errors(self, varlist, full_vars=False):
-        """ Get the model and data trade share differences.
-
-        Args:
-            varlist (numpy.ndarray):it is composed of
-                `[zeta, alpha, lat_guess, lng_guess]`.
-
-        Returns:
-            numpy.ndarray: the difference between data and model trade shares.
-        """
-        # Unpack arguments
-        zeta = varlist[0]
-
-        i = self.div_indices[full_vars]
-        lng_guess = varlist[i['long_s']: i['long_e']]
-        lat_guess = varlist[i['lat_s']: i['lat_e']]
-        alpha = varlist[i['a_s']:]
-
-        #assert len(lat_guess) == len(lng_guess)
-
-        s_ij_model = self.s_ij_model(zeta,
-                                     alpha,
-                                     self.fetch_dist(lat_guess,
-                                                     lng_guess,
-                                                     full_vars)
-                                    )
-        return self.df_shares - s_ij_model
-
-
     def sqerr_sum(self, varlist, full_vars=False):
         """ Gets the sum of squared errors.
 
@@ -349,6 +320,35 @@ class EstimateAncient(EstimateBase):
 
         # Save trade shares (to speed up self.get_errors)
         self.df_shares = self.df_iticount['s_ij'].values
+
+
+    def get_errors(self, varlist, full_vars=False):
+        """ Get the model and data trade share differences.
+
+        Args:
+            varlist (numpy.ndarray):it is composed of
+                `[zeta, alpha, lat_guess, lng_guess]`.
+
+        Returns:
+            numpy.ndarray: the difference between data and model trade shares.
+        """
+        # Unpack arguments
+        zeta = varlist[0]
+
+        i = self.div_indices[full_vars]
+        lng_guess = varlist[i['long_s']: i['long_e']]
+        lat_guess = varlist[i['lat_s']: i['lat_e']]
+        alpha = varlist[i['a_s']:]
+
+        #assert len(lat_guess) == len(lng_guess)
+
+        s_ij_model = self.s_ij_model(zeta,
+                                     alpha,
+                                     self.fetch_dist(lat_guess,
+                                                     lng_guess,
+                                                     full_vars)
+                                    )
+        return self.df_shares - s_ij_model
 
 
     def replace_id_coord(self, constr, drop_wahsusana=False, no_constr=False):
@@ -1081,6 +1081,36 @@ class EstimateModern(EstimateBase):
                                  + self.id_normalized[self.source]
                                  - 1)
 
+        # Save array index that views array of size len(self.df_coordinates)
+        # and selects off-diagonal elements. See self.tile_nodiag.
+        i = np.repeat(np.arange(1, self.num_cities), self.num_cities)
+        self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
+
+
+    def get_errors(self, varlist, full_vars=False):
+        """ Get the model and data trade share differences.
+
+        Args:
+            varlist (numpy.ndarray):it is composed of
+                `[zeta, alpha]`.
+
+        Returns:
+            numpy.ndarray: the difference between data and model trade shares.
+        """
+        # Unpack arguments
+        zeta = varlist[0]
+
+        i = self.div_indices
+        alpha = varlist[i['a_s']:]
+
+        #assert len(lat_guess) == len(lng_guess)
+
+        s_ij_model = self.s_ij_model(zeta,
+                                     alpha,
+                                     self.df_iticount['dist'].values
+                                    )
+        return self.df_shares - s_ij_model
+
 
     def get_bounds(self, set_elasticity=None):
         """ Fetch the upper and lower bounds for all entries in `varlist`.
@@ -1131,8 +1161,8 @@ class EstimateModern(EstimateBase):
                 conditions.
         """
         # Form default initial value
-        zeta = [2.0]
-        alphas = np.ones(self.num_cities)
+        zeta = [20.0]
+        alphas = 100*np.ones(self.num_cities)
         x0 = np.concatenate((zeta, alphas))
         #print(x0)
 
