@@ -1445,7 +1445,7 @@ class EstimateModern(EstimateBase):
                                                                 'zeta_sd_white',
                                                                 'zeta_sd_homo']
                               )
-        df_zeta.to_csv('./estim_results/zeta.csv', index=False)
+        df_zeta.to_csv('./estim_results/modern/'+self.source+'/zeta.csv', index=False)
 
         # 4. Save sizes and alphas (+ standard errors)
         size = self.get_size(varlist)
@@ -1482,7 +1482,7 @@ class EstimateModern(EstimateBase):
                                           'alpha_sd_white',
                                           'alpha_sd_homo']
                              )
-        cities.to_csv('./estim_results/cities.csv', index=False)
+        cities.to_csv('./estim_results/modern/'+self.source+'/cities.csv', index=False)
 
 
 

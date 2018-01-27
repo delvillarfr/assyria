@@ -19,3 +19,7 @@ estimate/sandbox.py
 # Directories
 tasks
 estimate/.old
+
+# Compressed files
+*.zip
+*.gz
