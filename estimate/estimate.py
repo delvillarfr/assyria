@@ -27,6 +27,112 @@ config.read(os.path.dirname(os.path.dirname(__file__)) + '/keys.ini')
 
 
 
+class Loader(object):
+    """ Class to load datasets for lost cities exercise.
+
+    It provides methods to get the iticount, coordinates and constraints
+    datasets with a chosen set of known and lost cities.
+
+    Args:
+        build_type (str): One of "directional" or "non-directional".
+    """
+
+    def __init__(self):
+        pass
+
+
+    def random_certs(self, num_cities, lost_cities):
+        """ Generate random cert with fixed number of lost cities.
+
+        In practice, what is required is an array with `lost_cities` 3s
+        randomly chosen.
+
+        Args:
+            lost_cities (int): The number of lost cities.
+
+        Returns:
+            (numpy.ndarray): The array of certs.
+        """
+        certs = np.zeros(num_cities)
+        lost_i = np.random.choice(num_cities,
+                                  size = lost_cities,
+                                  replace = False)
+        certs[lost_i] = 3
+
+        return certs
+
+
+    def reindex_coordinates(self, certs, coords):
+        """ Reindex coordinates
+
+        Args:
+            certs (numpy.ndarray): The array of location confidence. If
+                equal to 3, the corresponding is considered lost.
+            coords (pandas.DataFrame): The dataframe of coordinates.
+
+        Returns:
+            pandas.DataFrame: The resorted dataframe of coordinates with
+            new cert.
+        """
+        coords['cert'] = certs
+        coords = coords.sort_values('cert')
+        coords['id_shuff'] = range(len(coords))
+
+        return coords
+
+
+    def reindex_iticount(self,
+                         iticount,
+                         coords,
+                         merge_key='id',
+                         notation='fdv'):
+        """ Reindex and re-sort iticount data.
+
+        The sorting is based on the new id_shuff, first on j, then on i.
+
+        Args:
+            iticount (pandas.DataFrame): The iticount data.
+                notation (str): The convention for column names in iticount.
+                It can be either 'fdv' or 'jhwi'.
+
+        Returns:
+            pandas.DataFrame: The reindexed, resorted iticount data.
+        """
+        # Keep only relevant vars
+        c = coords[[merge_key, 'id_shuff']]
+        itikeys = {'fdv': [merge_key+'_i', merge_key+'_j'],
+                   'jhwi': ['i_'+merge_key, 'j_'+merge_key]}
+        for i in itikeys[notation]:
+            iticount = pd.merge(iticount,
+                                c,
+                                how = 'left',
+                                left_on = i,
+                                right_on = merge_key)
+        iticount = iticount.rename({'id_shuff_x': 'id_shuff_i',
+                                    'id_shuff_y': 'id_shuff_j'}, axis=1)
+
+        return iticount.sort_values(['id_shuff_j', 'id_shuff_i'])
+
+
+    def reindex_constr(self, constraint, coords, merge_key='id'):
+        """ Reindex and re-sort constraints data.
+
+        Args:
+            constraint (pandas.DataFrame): The constraints data.
+
+        Returns:
+            pandas.DataFrame: The reindexed, resorted constraints data.
+        """
+        # Keep only relevant vars
+        c = coords[[merge_key, 'id_shuff']]
+        constraint = pd.merge(constraint,
+                              c,
+                              how = 'left',
+                              on = merge_key)
+        return constraint.sort_values('id_shuff')
+
+
+
 class EstimateBase(object):
     """ Base Class for main estimation procedures.
 
@@ -187,141 +293,6 @@ class EstimateBase(object):
         return elems / denom
 
 
-    def sqerr_sum(self, varlist, full_vars=False):
-        """ Gets the sum of squared errors.
-
-        This is the objective function.
-
-        Returns:
-            numpy.float64: The value of the objective function given the data
-            and model trade shares.
-        """
-        errors = self.get_errors(varlist, full_vars)
-        return np.dot(errors, errors)
-
-
-
-class EstimateAncient(EstimateBase):
-    """ Class for estimation procedures on ancient dataset.
-
-    Initializes the data used to be used:
-
-    * loads processed datasets.
-    * sets coordinates in degrees.
-    * sets known and unknown coordinates datasets as separate attributes.
-    * saves the number of known and unknown cities
-    * saves the gradient of the objective function as attribute, to avoid
-        calling autograd multiple times.
-    * saves the jacobian of errors
-    * saves the dividing indices to go from variable array to individual
-        components.
-    * saves other data to speed up self.tile_nodiag and self.get_errors
-
-    Args:
-        build_type (str): One of "directional" or "non-directional".
-        lat (tuple): Contains assumed lower and upper latitude bounds.
-        lng (tuple): Contains assumed lower and upper longitude bounds.
-    """
-
-    def __init__(self, build_type, lat = (36, 42), lng = (27, 45)):
-        EstimateBase.__init__(self, build_type)
-        self.lat = lat
-        self.lng = lng
-
-        ## Paths
-        root = config.get('paths', 'root')
-        process = config.get('paths', 'process_a')
-
-        # Load processed datasets
-        if build_type == 'directional':
-            self.df_iticount = pd.read_csv(root + process
-                                           + 'iticount_dir.csv')
-            self.df_coordinates = pd.read_csv(root + process
-                                              + 'coordinates_dir.csv')
-            self.df_constr_dyn = pd.read_csv(root + process
-                                             + 'constraints_dir_dyn.csv')
-            self.df_constr_stat = pd.read_csv(root + process
-                                              + 'constraints_dir_stat.csv')
-        elif build_type == 'non_directional':
-            self.df_iticount = pd.read_csv(root + process
-                                           + 'iticount_nondir.csv')
-            self.df_coordinates = pd.read_csv(root + process
-                                              + 'coordinates_nondir.csv')
-            self.df_constr_dyn = pd.read_csv(root + process
-                                             + 'constraints_nondir_dyn.csv')
-            self.df_constr_stat = pd.read_csv(root + process
-                                              + 'constraints_nondir_stat.csv')
-        else:
-            raise ValueError("Initialize class with 'directional' or "
-                             + "'non_directional'")
-
-        # Save number of cities
-        self.num_cities = len(self.df_coordinates)
-
-        # Set coordinates in degrees (this should be done in process)
-        for v in ['long_x', 'lat_y']:
-            self.df_coordinates[v] = np.rad2deg(self.df_coordinates[v].values,
-                                                dtype='float64')
-
-        # Known cities
-        self.df_known = self.df_coordinates.loc[
-            self.df_coordinates['cert'] < 3,
-            ['id', 'long_x', 'lat_y']
-        ]
-        # Lost cities
-        self.df_unknown = self.df_coordinates.loc[
-            self.df_coordinates['cert'] == 3,
-            ['id', 'long_x', 'lat_y']
-        ]
-
-        self.num_cities_known = len(self.df_known)
-        self.num_cities_unknown = len(self.df_unknown)
-
-        # Automatic differentiation of objective and errors
-
-        ## Objective
-        ### Using all vars
-        def objective_full_vars(varlist):
-            """ This is the formulation for autograd. """
-            return self.sqerr_sum(varlist, full_vars=True)
-        self.grad_full_vars = grad(objective_full_vars)
-
-        ## Errors
-        ### Using all vars
-        def error_autograd_full_vars(v):
-            return self.get_errors(v, full_vars=True)
-        self.jac_errors_full_vars = jacobian(error_autograd_full_vars)
-
-        # Save indices to unpack argument of objective and gradient
-        # There is a set of indices if we are using the full set of coordinates
-        # as arguments, or if we use only the only the unknown cities
-        # coordinates as arguments.
-        self.div_indices = {
-            True: {'long_unknown_s': 2 + self.num_cities_known,
-                   'long_s': 2,
-                   'long_e': 2 + self.num_cities,
-                   'lat_unknown_s': 2 + self.num_cities + self.num_cities_known,
-                   'lat_s': 2 + self.num_cities,
-                   'lat_e': 2 + 2*self.num_cities,
-                   'a_s': 2 + 2*self.num_cities,
-                   'a_e': 2 + 3*self.num_cities},
-            False: {'long_s': 1,
-                    'long_e': 1 + self.num_cities_unknown,
-                    'lat_s': 1 + self.num_cities_unknown,
-                    'lat_e': 1 + 2*self.num_cities_unknown,
-                    'a_s': 1 + 2*self.num_cities_unknown,
-                    'a_e': 1 + 2*self.num_cities_unknown + self.num_cities}
-        }
-
-        # Save array index that views array of size len(self.df_coordinates)
-        # and selects off-diagonal elements. See self.tile_nodiag.
-        i = np.repeat(np.arange(1, self.num_cities), self.num_cities)
-        self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
-
-        # Save trade shares (to speed up self.get_errors)
-        self.df_shares = self.df_iticount['s_ij'].values
-
-
     def get_errors(self, varlist, full_vars=False):
         """ Get the model and data trade share differences.
 
@@ -351,125 +322,78 @@ class EstimateAncient(EstimateBase):
         return self.df_shares - s_ij_model
 
 
-    def replace_id_coord(self, constr, drop_wahsusana=False, no_constr=False):
-        """ Replaces the city id with its coordinates in the constraints data.
+    def sqerr_sum(self, varlist, full_vars=False):
+        """ Gets the sum of squared errors.
 
-        Args:
-            constr (DataFrame): Specifies upper and lower bounds for
-                coordinates of cities.
-            no_constr (bool): Whether or not to ignore the constraints.
-                Default is False.
+        This is the objective function.
 
         Returns:
-            The constraints data with substituted coordinates.
+            numpy.float64: The value of the objective function given the data
+            and model trade shares.
         """
-        constr = constr.copy()
-        v = ['lb_lambda', 'ub_lambda', 'lb_varphi', 'ub_varphi']
+        errors = self.get_errors(varlist, full_vars)
+        return np.dot(errors, errors)
 
-        if no_constr:
-            constr[v] = np.nan
 
-        if drop_wahsusana:
-            constr[v] = constr[v].replace('wa01', np.nan)
+    def full_to_short_i(self):
+        """ Get the indices of elements of short `varlist` from full `varlist`.
 
-        (ids, lats, lngs) = (self.df_coordinates['id'].values,
-                              self.df_coordinates['lat_y'].values,
-                              self.df_coordinates['long_x'].values
+        Returns:
+            numpy.ndarray: the indices to select short varlist from full
+                varlist
+        """
+        i = self.div_indices[True]
+        res = np.concatenate(([0],
+                              range(i['long_unknown_s'], i['long_e']),
+                              range(i['lat_unknown_s'], i['lat_e']),
+                              range(i['a_s'], i['a_e']))
                             )
-
-        tracker = {'lb_lambda': self.lat[0], 'ub_lambda': self.lat[1]}
-        for var in tracker.keys():
-            # An empty column is transformed to float64, thus raising error
-            try:
-                constr[var] = (constr[var].replace(np.nan, tracker[var])
-                                          .replace(ids, lats)
-                              )
-            except TypeError:
-                constr[var] = constr[var].replace(np.nan, tracker[var])
+        return res
 
 
-        tracker = {'lb_varphi': self.lng[0], 'ub_varphi': self.lng[1]}
-        for var in tracker.keys():
-            try:
-                constr[var] = (constr[var].replace(np.nan, tracker[var])
-                                          .replace(ids, lngs)
-                              )
-            except TypeError:
-                constr[var] = constr[var].replace(np.nan, tracker[var])
+    def short_to_jhwi(self, short):
+        """ Transform short varlist to varlist in Jhwi style
 
-        return constr
-
-
-    def get_bounds(self, constr, full_vars=False, set_elasticity=None):
-        """ Fetch the upper and lower bounds for all entries in `varlist`.
+        Takes a varlist in short format,
+        e.g.  v = (zeta, lng_unknown, lat_unknown, alphas)
+        and transforms it to Jhwi format:
+        v'
+        = (zeta, useless, lng_known, lng_unknown, lat_known, lat_unknown, alpha)
 
         Args:
-            constr (DataFrame): Specifies upper and lower bounds for
-                coordinates of cities.
-            set_elasticity (float): An imposed distance elasticity of trade.
-                Optional.
+            short (numpy.ndarray): The varlist in short format.
 
         Returns:
-            tuple: (lb, ub), where lb and ub are of type `list` for the bounds.
+            numpy.ndarray: The varlist in Jhwi format.
+
+        Warning:
+            zeta is not transformed into sigma (= 2 zeta)
         """
-        # Build specs: Ursu does not participate if directional, Kanes is in 
-        # second position in coordinates dataframe if directional, third
-        # otherwise.
-        if self.build_type == 'directional':
-            constr = constr[constr['id'] != 'ur01']
-            kanes_loc = 1
-        else:
-            kanes_loc = 2
+        # Extract components from short
+        i = self.div_indices[False]
+        zeta = short[0]
+        lng_unknown = short[i['long_s']: i['long_e']].flatten()
+        lat_unknown = short[i['lat_s']: i['lat_e']].flatten()
+        alphas = short[i['a_s']: i['a_e']].flatten()
 
-        if full_vars:
-            num_vars = 2 + 3*self.num_cities
-        else:
-            num_vars = 1 + 2*self.num_cities_unknown + self.num_cities
+        # Get known coordinates
+        lng_known = self.df_known['long_x'].values
+        lat_known = self.df_known['lat_y'].values
 
-        lb = num_vars * [-1.0e20]
-        ub = num_vars * [1.0e20]
-
-        if set_elasticity != None:
-            lb[0] = set_elasticity
-            ub[0] = set_elasticity
-        else:
-            # zeta should be larger than zero
-            lb[0] = 0.0
-
-
-        i = self.div_indices[full_vars]
-
-        dit = {'long':('varphi', 'long_x'), 'lat': ('lambda', 'lat_y')}
-        if full_vars:
-            lb[1] = 0
-            ub[1] = 0
-            for c in dit.keys():
-                # Known locations are given
-                lb[i[c+'_s']: i[c+'_unknown_s']] = self.df_known[dit[c][1]].tolist()
-                ub[i[c+'_s']: i[c+'_unknown_s']] = self.df_known[dit[c][1]].tolist()
-                # Unknown location constraints
-                lb[i[c+'_unknown_s']: i[c+'_e']] = constr['lb_'+dit[c][0]].tolist()
-                ub[i[c+'_unknown_s']: i[c+'_e']] = constr['ub_'+dit[c][0]].tolist()
-        else:
-            for c in dit.keys():
-                # Unknown location constraints
-                lb[i[c+'_s']: i[c+'_e']] = constr['lb_'+dit[c][0]].tolist()
-                ub[i[c+'_s']: i[c+'_e']] = constr['ub_'+dit[c][0]].tolist()
-
-        lb[i['a_s']:] = self.num_cities * [0.0]
-
-        # Kanes' alphas are normalized to 100
-        lb[i['a_s'] + kanes_loc] = 100.0
-        ub[i['a_s'] + kanes_loc] = 100.0
-
-        return (lb, ub)
+        return np.concatenate(([zeta, 2],
+                               lng_known,
+                               lng_unknown,
+                               lat_known,
+                               lat_unknown,
+                               alphas))
 
 
     def initial_cond(self,
                      len_sim=None,
                      perturb=None,
                      perturb_type='rigid',
-                     full_vars=False):
+                     full_vars=False,
+                     suggestion=None):
         """ Gets initial condition(s) for `IPOPT`.
 
         Args:
@@ -481,25 +405,29 @@ class EstimateAncient(EstimateBase):
                 multiplied by a scalar. If `'flexible'` then each element of
                 the initial value vector is multiplied by a different scalar.
                 Default is `'rigid'`.
+            suggestion (numpy.ndarray): A custom initial value. It must be
+                coherent with `full_vars`.
 
         Returns:
             numpy.ndarray: The default initial condition if perturb is not
                 specified, and an array with `len_sim` perturbed initial
                 conditions.
         """
-        # Form default initial value
-        zeta = [2.0]
-        alphas = np.ones(self.num_cities)
-        if full_vars:
-            # add tilde_delta0
-            zeta = zeta + [2.0]
-            lats = self.df_coordinates['lat_y'].values
-            longs = self.df_coordinates['long_x'].values
+        if suggestion is None:
+            # Form default initial value
+            zeta = [2.0]
+            alphas = np.ones(self.num_cities)
+            if full_vars:
+                # add tilde_delta0
+                zeta = zeta + [2.0]
+                lats = self.df_coordinates['lat_y'].values
+                longs = self.df_coordinates['long_x'].values
+            else:
+                lats = self.df_unknown['lat_y'].values
+                longs = self.df_unknown['long_x'].values
+            x0 = np.concatenate((zeta, longs, lats, alphas))
         else:
-            lats = self.df_unknown['lat_y'].values
-            longs = self.df_unknown['long_x'].values
-        x0 = np.concatenate((zeta, longs, lats, alphas))
-        #print(x0)
+            x0 = suggestion
 
         # Perturb it
         if perturb != None:
@@ -646,77 +574,6 @@ class EstimateAncient(EstimateBase):
         return data.sort_values('obj_val')
 
 
-    def get_best_result(self, results):
-        """ Extract the best result from the estimation output.
-
-        Not sure if this is useful...
-        results: pd.DataFrame. It is the output of the parallelized execution.
-        returns the row with minimum objective function value.
-        """
-        r = results.sort_values('obj_val')
-
-        # Discard results that are result in invalid numbers
-        r = r.loc[ r['status'] != -13, :]
-
-        return r.head(1)
-
-
-    def resolve(self, result):
-        """
-        Again, not sure if this is useful...
-        result: pd.DataFrame. Output of self.get_best_result
-
-        Recursively digs into the coordinates results if the maximum number of
-        iterations was reached. Otherwise it returns the best solution.
-        """
-        if result['status'].iloc[0] == -1:
-            names = (['zeta']
-                + ['{0}_lng'.format(i) for i in self.df_unknown['id'].tolist()]
-                + ['{0}_lat'.format(i) for i in self.df_unknown['id'].tolist()]
-                + ['{0}_a'.format(i) for i in self.df_coordinates['id'].tolist()]
-                )
-            init_val = result[names].values.flatten()
-
-            return self.resolve(self.solve(init_val))
-
-        else:
-            return result
-
-
-    def full_to_short_i(self):
-        """ Get the indices of elements of short `varlist` from full `varlist`.
-
-        Returns:
-            numpy.ndarray: the indices to select short varlist from full
-                varlist
-        """
-        i = self.div_indices[True]
-        res = np.concatenate(([0],
-                              range(i['long_unknown_s'], i['long_e']),
-                              range(i['lat_unknown_s'], i['lat_e']),
-                              range(i['a_s'], i['a_e']))
-                            )
-        return res
-
-
-    def output_to_jhwi(self, output):
-        """ DEPRECATED
-        Returns the initial value to evaluate the MATLAB objective function.
-        """
-        varlist = output_to_varlist(output)
-        # Go from sigma to zeta
-        varlist[0] = varlist[0]/2
-        # add useless parameter = 4 in index 1.
-        varlist = np.insert(varlist, 1, 4)
-        # Insert known coordinates. TEST THIS
-        i = self.div_indices[False]
-        varlist = np.insert(varlist,
-                            i['lat_s']+2,
-                            self.df_known['lat_y'].values)
-
-        pd.Series(varlist).to_csv('input_to_jhwi.csv', index=False)
-
-
     def get_variance_gmm(self, varlist, full_vars=False):
         """ Get the GMM variance-covariance matrix of the estimators
 
@@ -730,9 +587,12 @@ class EstimateAncient(EstimateBase):
         # Evaluate errors jacobian at estimated parameter.
         jac = self.jac_errors(varlist)
 
-        # Remove Kanes' a, since it is fixed.
-        kanes_i = self.div_indices[full_vars]['a_s'] + 1
-        jac = np.delete(jac, kanes_i, axis=1)
+        # Remove fixed a.
+        jac = np.delete(jac, self.index_normalized, axis=1)
+
+        # Remove fixed a
+        index_norm = self.div_indices[full_vars]['a_s'] + self.id_normalized
+        jac = np.delete(jac, index_norm, axis=1)
 
         #assert np.shape(jac) == (650, 48)
 
@@ -747,7 +607,11 @@ class EstimateAncient(EstimateBase):
         return np.linalg.multi_dot((bread_top, ham, bread_bottom))
 
 
-    def get_variance(self, varlist, var_type='white', full_vars=False):
+    def get_variance(self,
+                     varlist,
+                     var_type='white',
+                     zeta_fixed=False,
+                     full_vars=False):
         """ Compute the variance-covariance matrix of the estimators.
 
         It can be computed according to the White formula, or with
@@ -776,9 +640,13 @@ class EstimateAncient(EstimateBase):
             # Evaluate errors jacobian at estimated parameter.
             jac = self.jac_errors(varlist)
 
-        # Remove Kanes' a, since it is fixed.
-        kanes_i = self.div_indices[False]['a_s'] + 1
-        jac = np.delete(jac, kanes_i, axis=1)
+        # Remove fixed a
+        index_norm = self.div_indices[False]['a_s'] + self.id_normalized
+        jac = np.delete(jac, index_norm, axis=1)
+
+        # If zeta is fixed, remove it.
+        if zeta_fixed:
+            jac = np.delete(jac, 0, axis=1)
 
         bread = np.linalg.inv(np.dot( np.transpose(jac), jac ))
 
@@ -815,16 +683,16 @@ class EstimateAncient(EstimateBase):
         Returns:
             numpy.ndarray
         """
-        mean = varlist.copy()
-        if full_vars:
-            mean = mean[self.full_to_short_i()]
-        # Remove Kanes
-        kanes_i = self.div_indices[False]['a_s'] + 1
-        mean = np.delete(mean, kanes_i)
-
         cov = self.get_variance(varlist,
                                 var_type=var_type,
                                 full_vars=full_vars)
+
+        mean = varlist.copy()
+        if full_vars:
+            mean = mean[self.full_to_short_i()]
+        # Remove fixed a from mean
+        index_norm = self.div_indices[False]['a_s'] + self.id_normalized
+        mean = np.delete(mean, index_norm)
 
         sims = np.random.multivariate_normal(mean, cov, size)
 
@@ -846,7 +714,7 @@ class EstimateAncient(EstimateBase):
         return df
 
 
-    def get_size(self, varlist, scale_kanes=False, theta=4.0):
+    def get_size(self, varlist, theta=4.0):
         """ Retrieve the fundamental size of cities.
 
         Recall Size_i is proportional to L_i T_i^(1/theta).
@@ -878,12 +746,13 @@ class EstimateAncient(EstimateBase):
         factor_2 = np.sum(elems, axis = 1).flatten() + own_factor
 
         sizes = factor_1 * factor_2
-        if scale_kanes:
-            sizes = 100 * sizes / sizes[1]
         return sizes
 
 
-    def get_size_variance(self, varlist, scale_kanes=False, var_type='white'):
+    def get_size_variance(self,
+                          varlist,
+                          var_type='white',
+                          zeta_fixed=False):
         """ Get the fundamental size variance-covariance matrix.
 
         Applies Delta Method to get the variance-covariance matrix of the city
@@ -908,16 +777,26 @@ class EstimateAncient(EstimateBase):
                        + range(i['long_s'], i['long_unknown_s'])
                        + range(i['lat_s'], i['lat_unknown_s'])))
         j = j.values
-        ## Remove Kanes' a, since it is fixed.
-        kanes_i = self.div_indices[False]['a_s'] + 1
-        j = np.delete(j, kanes_i, axis=1)
+        # Remove fixed a
+        index_norm = self.div_indices[False]['a_s'] + self.id_normalized
+        j = np.delete(j, index_norm, axis=1)
 
-        var = self.get_variance(varlist, var_type=var_type, full_vars=True)
+        # If zeta is fixed, remove it.
+        if zeta_fixed:
+            j = np.delete(j, 0, axis=1)
+
+        var = self.get_variance(varlist,
+                                var_type=var_type,
+                                zeta_fixed = zeta_fixed,
+                                full_vars=True)
 
         return np.linalg.multi_dot((j, var, np.transpose(j)))
 
 
-    def export_results(self, varlist):
+    def export_results(self,
+                       varlist,
+                       zeta_fixed = False,
+                       loc = './estim_results/ancient/'):
         """ Export the estimation results.
 
         Exports zeta.csv, coordinates.csv, cities.csv, simulation.csv
@@ -925,21 +804,33 @@ class EstimateAncient(EstimateBase):
         Args:
             varlist (numpy.ndarray): it is in jhwi format:
         `(zeta, useless, long_known, long_unknown, lat_known, lat_unknown, a)`
+            loc (str): the directory to save results.
         """
         # 1. Fetch standard error of estimates
         varlist_cov_white = self.get_variance(varlist,
                                               var_type='white',
+                                              zeta_fixed = zeta_fixed,
                                               full_vars=True)
         varlist_cov_homo = self.get_variance(varlist,
                                              var_type='homo',
+                                             zeta_fixed = zeta_fixed,
                                              full_vars=True)
-        size_cov_white = self.get_size_variance(varlist, var_type='white')
-        size_cov_homo = self.get_size_variance(varlist, var_type='homo')
+        size_cov_white = self.get_size_variance(varlist,
+                                                zeta_fixed = zeta_fixed,
+                                                var_type='white')
+        size_cov_homo = self.get_size_variance(varlist,
+                                               zeta_fixed = zeta_fixed,
+                                               var_type='homo')
 
         varlist_sd_white = np.sqrt( np.diag(varlist_cov_white) )
         varlist_sd_homo = np.sqrt( np.diag(varlist_cov_homo) )
         size_sd_white = np.sqrt( np.diag(size_cov_white) )
         size_sd_homo = np.sqrt( np.diag(size_cov_homo) )
+
+        ## Add 0 sd for zeta if zeta is fixed
+        if zeta_fixed:
+            varlist_sd_white = np.concatenate(([0.0], varlist_sd_white))
+            varlist_sd_homo = np.concatenate(([0.0], varlist_sd_homo))
 
         # 2. Unpack varlist arguments
         zeta = varlist[0]
@@ -951,11 +842,12 @@ class EstimateAncient(EstimateBase):
         # 3. Save zeta.csv
         df_zeta = pd.DataFrame([[zeta,
                                  varlist_sd_white[0],
-                                 varlist_sd_homo[0]]], columns=['zeta',
-                                                                'zeta_sd_white',
-                                                                'zeta_sd_homo']
+                                 varlist_sd_homo[0]]],
+                               columns=['zeta',
+                                        'zeta_sd_white',
+                                        'zeta_sd_homo']
                               )
-        df_zeta.to_csv('./estim_results/zeta.csv', index=False)
+        df_zeta.to_csv(loc + 'zeta.csv', index=False)
 
         # 4. Save estimated coordinates + standard errors
         ## Unpack arguments
@@ -976,16 +868,17 @@ class EstimateAncient(EstimateBase):
                                        lat_estim,
                                        lat_white,
                                        lat_homo))
-        coordinates = pd.DataFrame( coord_array,
-                                    columns = ['id',
-                                               'longitude',
-                                               'longitude_sd_white',
-                                               'longitude_sd_homo',
-                                               'latitude',
-                                               'latitude_sd_white',
-                                               'latitude_sd_homo']
-                                  )
-        coordinates.to_csv('./estim_results/coordinates.csv', index=False)
+        cols = ['id',
+                'longitude',
+                'longitude_sd_white',
+                'longitude_sd_homo',
+                'latitude',
+                'latitude_sd_white',
+                'latitude_sd_homo']
+        coordinates = pd.DataFrame(coord_array, columns = cols)
+        coordinates = coordinates.merge(self.df_id, how='left', on='id')
+        coordinates = coordinates[['city_name'] + cols]
+        coordinates.to_csv(loc + 'coordinates.csv', index=False)
 
         # 5. Save sizes and alphas (+ standard errors)
         size = self.get_size(varlist)
@@ -994,37 +887,418 @@ class EstimateAncient(EstimateBase):
         alpha_white = varlist_sd_white[j['a_s']:]
         alpha_homo = varlist_sd_homo[j['a_s']:]
 
-        ## Insert missing s.e. for kanes in alpha and in sizes
-        alpha_white = np.insert(alpha_white, 1, np.nan)
-        alpha_homo = np.insert(alpha_homo, 1, np.nan)
-        ## These entries would otherwise be zero
-        size_sd_white[1] = np.nan
-        size_sd_homo[1] = np.nan
+        ## Insert 0 s.e. for fixed alpha (for compat. with jhwi)
+        alpha_white = np.insert(alpha_white, self.id_normalized, 0.0)
+        alpha_homo = np.insert(alpha_homo, self.id_normalized, 0.0)
 
         ids_city = self.df_coordinates['id'].values
         city_array = np.column_stack((ids_city,
-                                      size,
-                                      size_sd_white,
-                                      size_sd_homo,
                                       alpha,
                                       alpha_white,
-                                      alpha_homo))
-        cities = pd.DataFrame( city_array,
-                               columns = ['id',
-                                          'size',
-                                          'size_sd_white',
-                                          'size_sd_homo',
-                                          'alpha',
-                                          'alpha_sd_white',
-                                          'alpha_sd_homo']
-                             )
-        cities.to_csv('./estim_results/cities.csv', index=False)
+                                      alpha_homo,
+                                      size,
+                                      size_sd_white,
+                                      size_sd_homo))
+        cols = ['id',
+                'alpha',
+                'alpha_sd_white',
+                'alpha_sd_homo',
+                'size',
+                'size_sd_white',
+                'size_sd_homo'
+                ]
+        cities = pd.DataFrame(city_array, columns = cols)
+        cities = cities.merge(self.df_id, how='left', on='id')
+        cities = cities[['city_name'] + cols]
+        cities.to_csv(loc + 'cities.csv', index=False)
 
-        # 6. Generate and store contour data, white and homo
-        for v in ['white', 'homo']:
-            self.simulate_contour_data(varlist,
-                                       var_type=v,
-                                       full_vars=True)
+        ## 6. Generate and store contour data, white and homo
+        #for v in ['white', 'homo']:
+        #    self.simulate_contour_data(varlist,
+        #                               var_type=v,
+        #                               full_vars=True)
+
+
+
+class EstimateAncient(EstimateBase):
+    """ Class for estimation procedures on ancient dataset.
+
+    Initializes the data used to be used:
+
+    * loads processed datasets.
+    * sets coordinates in degrees.
+    * sets known and unknown coordinates datasets as separate attributes.
+    * saves the number of known and unknown cities
+    * saves the gradient of the objective function as attribute, to avoid
+        calling autograd multiple times.
+    * saves the jacobian of errors
+    * saves the dividing indices to go from variable array to individual
+        components.
+    * saves other data to speed up self.tile_nodiag and self.get_errors
+
+    Args:
+        build_type (str): One of "directional" or "non-directional".
+        lat (tuple): Contains assumed lower and upper latitude bounds.
+        lng (tuple): Contains assumed lower and upper longitude bounds.
+        rand_lost_cities (int): Optional. The number of random cities to lose.
+        lng_estimated (numpy.ndarray): The estimated longitudes of lost cities
+            in original exercise.
+        lat_estimated (numpy.ndarray): The estimated latitudes of lost cities
+            in original exercise.
+    """
+
+    def __init__(self,
+                 build_type,
+                 lat = (36, 42),
+                 lng = (27, 45),
+                 rand_lost_cities = None,
+                 lng_estimated = None,
+                 lat_estimated = None):
+        EstimateBase.__init__(self, build_type)
+        self.lat = lat
+        self.lng = lng
+
+        ## Paths
+        root = config.get('paths', 'root')
+        process = config.get('paths', 'process_a')
+
+        # Load processed datasets
+        self.df_id = pd.read_csv(root + process + 'id.csv')
+        if build_type == 'directional':
+            self.df_iticount = pd.read_csv(root + process
+                                           + 'iticount_dir.csv')
+            self.df_coordinates = pd.read_csv(root + process
+                                              + 'coordinates_dir.csv')
+            self.df_constr_dyn = pd.read_csv(root + process
+                                             + 'constraints_dir_dyn.csv')
+            self.df_constr_stat = pd.read_csv(root + process
+                                              + 'constraints_dir_stat.csv')
+        elif build_type == 'non_directional':
+            self.df_iticount = pd.read_csv(root + process
+                                           + 'iticount_nondir.csv')
+            self.df_coordinates = pd.read_csv(root + process
+                                              + 'coordinates_nondir.csv')
+            self.df_constr_dyn = pd.read_csv(root + process
+                                             + 'constraints_nondir_dyn.csv')
+            self.df_constr_stat = pd.read_csv(root + process
+                                              + 'constraints_nondir_stat.csv')
+        else:
+            raise ValueError("Initialize class with 'directional' or "
+                             + "'non_directional'")
+
+        # Save number of cities
+        self.num_cities = len(self.df_coordinates)
+
+        # Set coordinates in degrees (this should be done in process)
+        for v in ['long_x', 'lat_y']:
+            self.df_coordinates[v] = np.rad2deg(self.df_coordinates[v].values,
+                                                dtype='float64')
+
+        if rand_lost_cities is not None:
+            lost_i = self.df_coordinates['cert'] == 3
+            self.df_coordinates.loc[lost_i, 'long_x'] = lng_estimated
+            self.df_coordinates.loc[lost_i, 'lat_y'] = lat_estimated
+
+            load = Loader()
+
+            rand_certs = load.random_certs(self.num_cities, rand_lost_cities)
+            self.df_coordinates = load.reindex_coordinates(rand_certs,
+                                                           self.df_coordinates)
+            self.df_iticount = load.reindex_iticount(self.df_iticount,
+                                                     self.df_coordinates)
+            self.df_constr_dyn = load.reindex_constr(self.df_constr_dyn,
+                                                     self.df_coordinates)
+            self.df_constr_stat = load.reindex_constr(self.df_constr_stat,
+                                                      self.df_coordinates)
+            # Save Kanes' position in cities
+            self.id_normalized = (
+                    self.df_coordinates.loc[self.df_coordinates['id'] == 'ka01',
+                                            'id_shuff'].values[0]
+                    )
+        else:
+            self.id_normalized = int(
+                    self.df_coordinates.loc[self.df_coordinates['id'] == 'ka01',
+                                            'id_jhwi'].values[0]
+                    ) - 1
+
+        # Known cities
+        self.df_known = self.df_coordinates.loc[
+            self.df_coordinates['cert'] < 3,
+            ['id', 'long_x', 'lat_y']
+        ]
+        # Lost cities
+        self.df_unknown = self.df_coordinates.loc[
+                self.df_coordinates['cert'] == 3,
+            ['id', 'long_x', 'lat_y']
+        ]
+
+        self.num_cities_known = len(self.df_known)
+        self.num_cities_unknown = len(self.df_unknown)
+
+        # Automatic differentiation of objective and errors
+
+        ## Objective
+        ### Using all vars
+        def objective_full_vars(varlist):
+            """ This is the formulation for autograd. """
+            return self.sqerr_sum(varlist, full_vars=True)
+        self.grad_full_vars = grad(objective_full_vars)
+
+        ## Errors
+        ### Using all vars
+        def error_autograd_full_vars(v):
+            return self.get_errors(v, full_vars=True)
+        self.jac_errors_full_vars = jacobian(error_autograd_full_vars)
+
+        # Save indices to unpack argument of objective and gradient
+        # There is a set of indices if we are using the full set of coordinates
+        # as arguments, or if we use only the only the unknown cities
+        # coordinates as arguments.
+        self.div_indices = {
+            True: {'long_unknown_s': 2 + self.num_cities_known,
+                   'long_s': 2,
+                   'long_e': 2 + self.num_cities,
+                   'lat_unknown_s': 2 + self.num_cities + self.num_cities_known,
+                   'lat_s': 2 + self.num_cities,
+                   'lat_e': 2 + 2*self.num_cities,
+                   'a_s': 2 + 2*self.num_cities,
+                   'a_e': 2 + 3*self.num_cities},
+            False: {'long_s': 1,
+                    'long_e': 1 + self.num_cities_unknown,
+                    'lat_s': 1 + self.num_cities_unknown,
+                    'lat_e': 1 + 2*self.num_cities_unknown,
+                    'a_s': 1 + 2*self.num_cities_unknown,
+                    'a_e': 1 + 2*self.num_cities_unknown + self.num_cities}
+        }
+
+        # Save array index that views array of size len(self.df_coordinates)
+        # and selects off-diagonal elements. See self.tile_nodiag.
+        i = np.repeat(np.arange(1, self.num_cities), self.num_cities)
+        self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
+
+        # Save trade shares (to speed up self.get_errors)
+        self.df_shares = self.df_iticount['s_ij'].values
+
+
+    def replace_id_coord(self, constr, drop_wahsusana=False, no_constr=False):
+        """ Replaces the city id with its coordinates in the constraints data.
+
+        Args:
+            constr (DataFrame): Specifies upper and lower bounds for
+                coordinates of cities.
+            no_constr (bool): Whether or not to ignore the constraints.
+                Default is False.
+
+        Returns:
+            The constraints data with substituted coordinates.
+        """
+        constr = constr.copy()
+        v = ['lb_lambda', 'ub_lambda', 'lb_varphi', 'ub_varphi']
+
+        if no_constr:
+            constr[v] = np.nan
+
+        if drop_wahsusana:
+            constr[v] = constr[v].replace('wa01', np.nan)
+
+        (ids, lats, lngs) = (self.df_coordinates['id'].values,
+                              self.df_coordinates['lat_y'].values,
+                              self.df_coordinates['long_x'].values
+                            )
+
+        tracker = {'lb_lambda': self.lat[0], 'ub_lambda': self.lat[1]}
+        for var in tracker.keys():
+            # An empty column is transformed to float64, thus raising error
+            try:
+                constr[var] = (constr[var].replace(np.nan, tracker[var])
+                                          .replace(ids, lats)
+                              )
+            except TypeError:
+                constr[var] = constr[var].replace(np.nan, tracker[var])
+
+
+        tracker = {'lb_varphi': self.lng[0], 'ub_varphi': self.lng[1]}
+        for var in tracker.keys():
+            try:
+                constr[var] = (constr[var].replace(np.nan, tracker[var])
+                                          .replace(ids, lngs)
+                              )
+            except TypeError:
+                constr[var] = constr[var].replace(np.nan, tracker[var])
+
+        return constr
+
+
+    def get_bounds(self, constr, full_vars=False, set_elasticity=None):
+        """ Fetch the upper and lower bounds for all entries in `varlist`.
+
+        Args:
+            constr (DataFrame): Specifies upper and lower bounds for
+                coordinates of cities.
+            set_elasticity (float): An imposed distance elasticity of trade.
+                Optional.
+
+        Returns:
+            tuple: (lb, ub), where lb and ub are of type `list` for the bounds.
+        """
+        # Build specs: Ursu does not participate if directional, Kanes is in 
+        # second position in coordinates dataframe if directional, third
+        # otherwise.
+        if self.build_type == 'directional':
+            constr = constr[constr['id'] != 'ur01']
+
+        if full_vars:
+            num_vars = 2 + 3*self.num_cities
+        else:
+            num_vars = 1 + 2*self.num_cities_unknown + self.num_cities
+
+        lb = num_vars * [-1.0e20]
+        ub = num_vars * [1.0e20]
+
+        if set_elasticity != None:
+            lb[0] = set_elasticity
+            ub[0] = set_elasticity
+        else:
+            # zeta should be larger than zero
+            lb[0] = 0.0
+
+        i = self.div_indices[full_vars]
+        dit = {'long':('varphi', 'long_x'), 'lat': ('lambda', 'lat_y')}
+        if full_vars:
+            lb[1] = 0
+            ub[1] = 0
+            for c in dit.keys():
+                # Known locations are given
+                lb[i[c+'_s']: i[c+'_unknown_s']] = self.df_known[dit[c][1]].tolist()
+                ub[i[c+'_s']: i[c+'_unknown_s']] = self.df_known[dit[c][1]].tolist()
+                # Unknown location constraints
+                lb[i[c+'_unknown_s']: i[c+'_e']] = constr['lb_'+dit[c][0]].tolist()
+                ub[i[c+'_unknown_s']: i[c+'_e']] = constr['ub_'+dit[c][0]].tolist()
+        else:
+            for c in dit.keys():
+                # Unknown location constraints
+                lb[i[c+'_s']: i[c+'_e']] = constr['lb_'+dit[c][0]].tolist()
+                ub[i[c+'_s']: i[c+'_e']] = constr['ub_'+dit[c][0]].tolist()
+        lb[i['a_s']:] = self.num_cities * [0.0]
+
+        # Normalization
+        lb[i['a_s'] + self.id_normalized] = 100.0
+        ub[i['a_s'] + self.id_normalized] = 100.0
+
+        print(self.id_normalized)
+
+        return (lb, ub)
+
+
+
+class EstimateModernProof(EstimateBase):
+    """ Class for estimation procedures on modern dataset, proof of concept.
+
+    Initializes the data used to be used:
+
+    * loads processed datasets.
+    * sets coordinates in degrees.
+    * sets known and unknown coordinates datasets as separate attributes.
+    * saves the number of known and unknown cities
+    * saves the gradient of the objective function as attribute, to avoid
+        calling autograd multiple times.
+    * saves the jacobian of errors
+    * saves the dividing indices to go from variable array to individual
+        components.
+    * saves other data to speed up self.tile_nodiag and self.get_errors
+
+    Args:
+        build_type (str): One of "directional" or "non-directional".
+        lat (tuple): Contains assumed lower and upper latitude bounds.
+        lng (tuple): Contains assumed lower and upper longitude bounds.
+        rand_lost_cities (int): Optional. The number of random cities to lose.
+        lng_estimated (numpy.ndarray): The estimated longitudes of lost cities
+            in original exercise.
+        lat_estimated (numpy.ndarray): The estimated latitudes of lost cities
+            in original exercise.
+    """
+
+    def __init__(self,
+                 rand_lost_cities):
+        EstimateBase.__init__(self, build_type='directional')
+
+        ## Paths
+        root = config.get('paths', 'root')
+        process = config.get('paths', 'process_p')
+
+        # Load processed datasets
+        self.df_coordinates = pd.read_csv(root + process + 'modern'
+                                          + '/coordinates_all.csv')
+        self.df_iticount = pd.read_csv(root + process + 'modern'
+                                       + '/estimation_data_all_directional.csv')
+
+        # Save number of cities
+        self.num_cities = len(self.df_coordinates)
+
+        # Loose cities
+        load = Loader()
+        rand_certs = load.random_certs(self.num_cities, rand_lost_cities)
+        self.df_coordinates = load.reindex_coordinates(rand_certs,
+                                                       self.df_coordinates)
+        self.df_iticount = load.reindex_iticount(self.df_iticount,
+                                                 self.df_coordinates,
+                                                 notation='jhwi')
+        # Save position of city that must be normalized to 100.
+        self.id_normalized = (
+                self.df_coordinates.loc[self.df_coordinates['id'] == 38,
+                                        'id_shuff'].values[0]
+                )
+
+        # Known cities
+        self.df_known = self.df_coordinates.loc[
+            self.df_coordinates['cert'] < 3,
+            ['id', 'long_x', 'lat_y']
+        ]
+        # Lost cities
+        self.df_unknown = self.df_coordinates.loc[
+                self.df_coordinates['cert'] == 3,
+            ['id', 'long_x', 'lat_y']
+        ]
+
+        self.num_cities_known = len(self.df_known)
+        self.num_cities_unknown = len(self.df_unknown)
+
+
+        # Automatic differentiation of objective and errors
+        ## Errors
+        ### Using all vars
+        def error_autograd_full_vars(v):
+            return self.get_errors(v, full_vars=True)
+        self.jac_errors_full_vars = jacobian(error_autograd_full_vars)
+
+        # Save indices to unpack argument of objective and gradient
+        # There is a set of indices if we are using the full set of coordinates
+        # as arguments, or if we use only the only the unknown cities
+        # coordinates as arguments.
+        self.div_indices = {
+            True: {'long_unknown_s': 2 + self.num_cities_known,
+                   'long_s': 2,
+                   'long_e': 2 + self.num_cities,
+                   'lat_unknown_s': 2 + self.num_cities + self.num_cities_known,
+                   'lat_s': 2 + self.num_cities,
+                   'lat_e': 2 + 2*self.num_cities,
+                   'a_s': 2 + 2*self.num_cities,
+                   'a_e': 2 + 3*self.num_cities},
+            False: {'long_s': 1,
+                    'long_e': 1 + self.num_cities_unknown,
+                    'lat_s': 1 + self.num_cities_unknown,
+                    'lat_e': 1 + 2*self.num_cities_unknown,
+                    'a_s': 1 + 2*self.num_cities_unknown,
+                    'a_e': 1 + 2*self.num_cities_unknown + self.num_cities}
+        }
+
+        # Save array index that views array of size len(self.df_coordinates)
+        # and selects off-diagonal elements. See self.tile_nodiag.
+        i = np.repeat(np.arange(1, self.num_cities), self.num_cities)
+        self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
+
+        # Save trade shares (to speed up self.get_errors)
+        self.df_shares = self.df_iticount['s_ij'].values
 
 
 
@@ -1351,7 +1625,7 @@ class EstimateModern(EstimateBase):
                     + "'white' or 'homo'")
 
 
-    def get_size(self, varlist, scale_normalized=False, theta=4.0):
+    def get_size(self, varlist, theta=4.0):
         """ Retrieve the fundamental size of cities.
 
         Recall Size_i is proportional to L_i T_i^(1/theta).
@@ -1381,12 +1655,10 @@ class EstimateModern(EstimateBase):
         factor_2 = np.sum(elems, axis = 1).flatten() + own_factor
 
         sizes = factor_1 * factor_2
-        if scale_normalized:
-            sizes = 100 * sizes / sizes[self.id_normalized[self.source] - 1]
         return sizes
 
 
-    def get_size_variance(self, varlist, scale_normalized=False, var_type='white'):
+    def get_size_variance(self, varlist, var_type='white'):
         """ Get the fundamental size variance-covariance matrix.
 
         Applies Delta Method to get the variance-covariance matrix of the city
@@ -1454,36 +1726,32 @@ class EstimateModern(EstimateBase):
         alpha_white = varlist_sd_white[i['a_s']:]
         alpha_homo = varlist_sd_homo[i['a_s']:]
 
-        ## Insert missing s.e. for kanes in alpha and in sizes
+        ## Insert missing s.e. for fixed city in alpha
         alpha_white = np.insert(alpha_white,
                                 self.id_normalized[self.source] - 1,
                                 np.nan)
         alpha_homo = np.insert(alpha_homo,
                                self.id_normalized[self.source] - 1,
                                np.nan)
-        ### These entries would otherwise be zero
-        #size_sd_white[1] = np.nan
-        #size_sd_homo[1] = np.nan
 
         ids_city = self.df_coordinates['id'].values
         city_array = np.column_stack((ids_city,
-                                      size,
-                                      size_sd_white,
-                                      size_sd_homo,
                                       alpha,
                                       alpha_white,
-                                      alpha_homo))
+                                      alpha_homo,
+                                      size,
+                                      size_sd_white,
+                                      size_sd_homo))
         cities = pd.DataFrame( city_array,
                                columns = ['id',
-                                          'size',
-                                          'size_sd_white',
-                                          'size_sd_homo',
                                           'alpha',
                                           'alpha_sd_white',
-                                          'alpha_sd_homo']
+                                          'alpha_sd_homo',
+                                          'size',
+                                          'size_sd_white',
+                                          'size_sd_homo']
                              )
         cities.to_csv('./estim_results/modern/'+self.source+'/cities.csv', index=False)
-
 
 
 

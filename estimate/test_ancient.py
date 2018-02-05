@@ -45,6 +45,7 @@ def test_same_known_and_unknown_cities_nondir():
 
 def test_same_constraints_after_coord_replace_directional_dir():
     e = estimate.EstimateAncient('directional')
+    print(e.df_constr_dyn)
     replaced_dyn = e.replace_id_coord(e.df_constr_dyn)
     replaced_stat = e.replace_id_coord(e.df_constr_stat)
     replaced_no = e.replace_id_coord(e.df_constr_stat, no_constr=True)
@@ -778,6 +779,7 @@ def test_reason_for_nan_in_IPOPT():
     #e.solve(input_long, full_vars=True, solver='mumps')
     #k
 
+
 def test_bounds_to_ipopt_dir():
     e = estimate.EstimateAncient('directional')
     replaced_no = e.replace_id_coord(e.df_constr_stat, no_constr=True)
@@ -786,3 +788,166 @@ def test_bounds_to_ipopt_dir():
                           set_elasticity=5.0)
     print(bounds[0])
     print(bounds[1])
+
+
+def test_short_to_jhwi():
+    e = estimate.EstimateAncient('directional')
+    input_jhwi = pd.read_csv('./tests/ancient/data/theta0_dir.csv').values.flatten()
+    input_short = input_jhwi[e.full_to_short_i()]
+    input_long = e.short_to_jhwi(input_short)
+
+    np.testing.assert_almost_equal(input_jhwi, input_long)
+
+
+#def test_generate_final_tables():
+#    e = estimate.EstimateAncient('directional')
+#    varlist = (pd.read_csv('./tests/ancient/data/theta_firststage_fdv.csv',
+#                           header=None)
+#                 .values
+#                 .flatten()
+#                 )
+#    v = e.short_to_jhwi(varlist)
+#    # Sigma to zeta
+#    #varlist[0] = varlist[0]*2.0
+#
+#    e.export_results(v, loc='./estim_results/ancient/')
+
+
+def test_final_tables_same_coordinates():
+    e = estimate.EstimateAncient('directional')
+
+    path = './tests/ancient/data/'
+    varlist = (pd.read_csv(path + 'theta_jhwi.csv',
+                           header=None)
+                 .values
+                 .flatten()
+                 )
+    # Sigma to zeta
+    varlist[0] = varlist[0]*2.0
+
+    e.export_results(varlist, loc=path)
+
+    coordinates = pd.read_csv(path + 'coordinates.csv')
+    coords_lost = coordinates[['longitude', 'latitude']].values
+    coords_known = e.df_known[['long_x', 'lat_y']].values
+    coords_mine = np.concatenate((coords_known, coords_lost))
+
+    jhwi = pd.read_csv(path + 'report_table_whitese.csv')
+    coords_jhwi = jhwi[['varphi_est', 'lambda_est']].values
+
+    np.testing.assert_almost_equal(coords_mine, coords_jhwi)
+
+
+def test_final_tables_same_alphas():
+    e = estimate.EstimateAncient('directional')
+
+    path = './tests/ancient/data/'
+    varlist = (pd.read_csv(path + 'theta_jhwi.csv',
+                           header=None)
+                 .values
+                 .flatten()
+                 )
+    # Sigma to zeta
+    varlist[0] = varlist[0]*2.0
+
+    e.export_results(varlist, loc=path)
+
+    cities = pd.read_csv(path + 'cities.csv')
+    alphas_mine = cities['alpha'].values
+
+    jhwi = pd.read_csv(path + 'report_table_whitese.csv')
+    alphas_jhwi = jhwi['alpha'].values
+
+    np.testing.assert_almost_equal(alphas_mine, alphas_jhwi)
+
+
+def test_final_tables_same_sizes():
+    e = estimate.EstimateAncient('directional')
+
+    path = './tests/ancient/data/'
+    varlist = (pd.read_csv(path + 'theta_jhwi.csv',
+                           header=None)
+                 .values
+                 .flatten()
+                 )
+    # Sigma to zeta
+    varlist[0] = varlist[0]*2.0
+
+    e.export_results(varlist, loc=path)
+
+    cities = pd.read_csv(path + 'cities.csv')
+    sizes_mine = cities['size'].values
+
+    jhwi = pd.read_csv(path + 'report_table_whitese.csv')
+    sizes_jhwi = jhwi['T_one_over_vartheta'].values
+
+    np.testing.assert_almost_equal(sizes_mine, sizes_jhwi)
+
+
+def test_final_tables_same_coords_sd_white():
+    e = estimate.EstimateAncient('directional')
+
+    path = './tests/ancient/data/'
+    varlist = (pd.read_csv(path + 'theta_jhwi.csv',
+                           header=None)
+                 .values
+                 .flatten()
+                 )
+    # Sigma to zeta
+    varlist[0] = varlist[0]*2.0
+
+    e.export_results(varlist, loc=path)
+
+    coordinates = pd.read_csv(path + 'coordinates.csv')
+    coords_sd_mine = coordinates[['longitude_sd_white', 'latitude_sd_white']].values
+
+    jhwi = pd.read_csv(path + 'report_table_whitese.csv')
+    coords_sd_jhwi = jhwi.loc[jhwi['validity']==0, ['varphi_se', 'lambda_se']].values
+
+    np.testing.assert_almost_equal(coords_sd_mine, coords_sd_jhwi)
+
+
+def test_final_tables_same_alphas_sd_white():
+    e = estimate.EstimateAncient('directional')
+
+    path = './tests/ancient/data/'
+    varlist = (pd.read_csv(path + 'theta_jhwi.csv',
+                           header=None)
+                 .values
+                 .flatten()
+                 )
+    # Sigma to zeta
+    varlist[0] = varlist[0]*2.0
+
+    e.export_results(varlist, loc=path)
+
+    cities = pd.read_csv(path + 'cities.csv')
+    alphas_sd_mine = cities['alpha_sd_white'].values
+
+    jhwi = pd.read_csv(path + 'report_table_whitese.csv')
+    alphas_sd_jhwi = jhwi['alpha_se'].values
+
+    np.testing.assert_almost_equal(alphas_sd_mine, alphas_sd_jhwi)
+
+
+def test_final_tables_same_sizes_sd_white():
+    e = estimate.EstimateAncient('directional')
+
+    path = './tests/ancient/data/'
+    varlist = (pd.read_csv(path + 'theta_jhwi.csv',
+                           header=None)
+                 .values
+                 .flatten()
+                 )
+    # Sigma to zeta
+    varlist[0] = varlist[0]*2.0
+
+    e.export_results(varlist, loc=path)
+
+    cities = pd.read_csv(path + 'cities.csv')
+    sizes_sd_mine = cities['size_sd_white'].values
+
+    jhwi = pd.read_csv(path + 'report_table_whitese.csv')
+    sizes_sd_jhwi = jhwi['T_one_over_vartheta_se'].values
+
+    np.testing.assert_almost_equal(sizes_sd_mine, sizes_sd_jhwi)
