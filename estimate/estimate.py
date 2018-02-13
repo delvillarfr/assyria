@@ -445,135 +445,6 @@ class EstimateBase(object):
         return x0
 
 
-    def solve(self,
-              x0,
-              constraint_type = 'static',
-              max_iter = 25000,
-              full_vars = False,
-              solver='ma57',
-              set_elasticity=None,
-              no_constr=False):
-        """ Solve the sum of squared distances minimization problem with IPOPT.
-
-        Args:
-            x0 (list): The initial value.
-            max_iter (int): Maximum iterations before IPOPT stops.
-            constraint_type (str): One of 'static' or 'dynamic'.
-            solver (str): Linear solver. 'ma57' is the default. If not
-                available, use 'mumps'.
-
-        Returns:
-            A one-row dataframe with optimization information.
-        """
-        # Set bounds
-        if constraint_type == 'static':
-            constr = self.replace_id_coord(self.df_constr_stat,
-                                           no_constr=no_constr)
-        elif constraint_type == 'dynamic':
-            constr = self.replace_id_coord(self.df_constr_dyn,
-                                           no_constr=no_constr)
-        else:
-            raise ValueError("Please specify the constraint type to be "
-                             + "'static' or 'dynamic'")
-        bounds = self.get_bounds(constr, full_vars, set_elasticity)
-
-        assert len(bounds[0]) == len(x0)
-        #print('Low bound:')
-        #print(bounds[0])
-        #print('High bound:')
-        #print(bounds[1])
-        #print('max_iter:' + str(max_iter))
-
-        nlp = ipopt.problem( n=len(x0),
-                             m=0,
-                             problem_obj=OptimizerAncient(build_type=self.build_type,
-                                                   full_vars=full_vars),
-                             lb=bounds[0],
-                             ub=bounds[1] )
-
-        # Add IPOPT options (some jhwi options were default)
-        option_specs = { 'hessian_approximation': 'limited-memory',
-                         'linear_solver': solver,
-                         'limited_memory_max_history': 100,
-                         'limited_memory_max_skipping': 1,
-                         'mu_strategy': 'adaptive',
-                         'tol': 1e-8,
-                         'acceptable_tol': 1e-7,
-                         'acceptable_iter': 100,
-                         'max_iter': max_iter}
-        for option in option_specs.keys():
-            nlp.addOption(option, option_specs[option])
-
-        (x, info) = nlp.solve(x0)
-
-        # Set up variable names
-        alphas = ['{0}_a'.format(i) for i in self.df_coordinates['id'].tolist()]
-        if full_vars:
-            longs = ['{0}_lng'.format(i) for i in self.df_coordinates['id'].tolist()]
-            lats = ['{0}_lat'.format(i) for i in self.df_coordinates['id'].tolist()]
-            headers = ['zeta', 'useless'] + longs + lats + alphas
-        else:
-            longs = ['{0}_lng'.format(i) for i in self.df_unknown['id'].tolist()]
-            lats = ['{0}_lat'.format(i) for i in self.df_unknown['id'].tolist()]
-            headers = ['zeta'] + longs + lats + alphas
-
-        df = pd.DataFrame(data = [x],
-                          columns = headers)
-        df['obj_val'] = info['obj_val']
-        df['status'] = info['status']
-        df['status_msg'] = info['status_msg']
-        df['status_msg'] = df['status_msg'].str.replace(';', '')
-
-        #Add initial condition
-        for ival in range(len(x0)):
-            df['x0_'+str(ival)] = x0[ival]
-
-        return df
-
-
-    def gen_data(self,
-                 x0,
-                 rank = None,
-                 max_iter = 25000,
-                 full_vars = False,
-                 set_elasticity=None,
-                 no_constr=False):
-        """ Run `self.solve` for many initial values.
-
-        This function is the one called when running estimation in parallel.
-
-        Args:
-            x0 (numpy.ndarray): The array of initial conditions. Each row is an
-                initial condition.
-            rank (int): Process number in parallelized computing.
-
-        Returns:
-            DataFrame: simulation dataframe sorted by objective value
-
-        Warning:
-            Make sure `full_vars` is consistent with `x0`.
-        """
-        data = self.solve( x0[0, :],
-                           max_iter=max_iter,
-                           full_vars=full_vars,
-                           set_elasticity=set_elasticity,
-                           no_constr=no_constr)
-        len_sim = x0.shape[0]
-        for i in range(1, len_sim):
-            i_val = x0[i, :]
-            data = data.append( self.solve(i_val,
-                                           max_iter = max_iter,
-                                           full_vars = full_vars,
-                                           set_elasticity = set_elasticity,
-                                           no_constr = no_constr) )
-
-        if rank != None:
-            data['process'] = rank
-
-        # Sort
-        return data.sort_values('obj_val')
-
-
     def get_variance_gmm(self, varlist, full_vars=False):
         """ Get the GMM variance-covariance matrix of the estimators
 
@@ -806,6 +677,10 @@ class EstimateBase(object):
         `(zeta, useless, long_known, long_unknown, lat_known, lat_unknown, a)`
             loc (str): the directory to save results.
         """
+        # 0. Cast varlist as np.float64. See numpy bug in
+        # `self.haversine_approx`.
+        varlist = np.float64(varlist)
+
         # 1. Fetch standard error of estimates
         varlist_cov_white = self.get_variance(varlist,
                                               var_type='white',
@@ -821,7 +696,13 @@ class EstimateBase(object):
         size_cov_homo = self.get_size_variance(varlist,
                                                zeta_fixed = zeta_fixed,
                                                var_type='homo')
+        print(varlist_cov_white.shape)
+        pd.DataFrame(varlist_cov_homo).to_csv('~/Desktop/w.csv', index=False)
 
+        print(np.prod(np.diag(varlist_cov_white) > 0.0))
+        print(np.prod(np.diag(varlist_cov_homo) > 0.0))
+        print(np.prod(np.diag(size_cov_white) > 0.0))
+        print(np.prod(np.diag(size_cov_white) > 0.0))
         varlist_sd_white = np.sqrt( np.diag(varlist_cov_white) )
         varlist_sd_homo = np.sqrt( np.diag(varlist_cov_homo) )
         size_sd_white = np.sqrt( np.diag(size_cov_white) )
@@ -1190,6 +1071,173 @@ class EstimateAncient(EstimateBase):
         return (lb, ub)
 
 
+    def solve(self,
+              x0,
+              constraint_type = 'static',
+              max_iter = 25000,
+              full_vars = False,
+              solver='ma57',
+              set_elasticity=None,
+              no_constr=False):
+        """ Solve the sum of squared distances minimization problem with IPOPT.
+
+        Args:
+            x0 (list): The initial value.
+            max_iter (int): Maximum iterations before IPOPT stops.
+            constraint_type (str): One of 'static' or 'dynamic'.
+            solver (str): Linear solver. 'ma57' is the default. If not
+                available, use 'mumps'.
+
+        Returns:
+            A one-row dataframe with optimization information.
+        """
+        # Cast x0 as np.float64. See numpy bug in `self.haversine_approx`.
+        x0 = np.float64(x0)
+
+        # Set bounds
+        if constraint_type == 'static':
+            constr = self.replace_id_coord(self.df_constr_stat,
+                                           no_constr=no_constr)
+        elif constraint_type == 'dynamic':
+            constr = self.replace_id_coord(self.df_constr_dyn,
+                                           no_constr=no_constr)
+        else:
+            raise ValueError("Please specify the constraint type to be "
+                             + "'static' or 'dynamic'")
+        bounds = self.get_bounds(constr, full_vars, set_elasticity)
+
+        assert len(bounds[0]) == len(x0)
+        #print('Low bound:')
+        #print(bounds[0])
+        #print('High bound:')
+        #print(bounds[1])
+        #print('max_iter:' + str(max_iter))
+
+        nlp = ipopt.problem( n=len(x0),
+                             m=0,
+                             problem_obj=OptimizerAncient(build_type=self.build_type,
+                                                   full_vars=full_vars),
+                             lb=bounds[0],
+                             ub=bounds[1] )
+
+        # Add IPOPT options (some jhwi options were default)
+        option_specs = { 'hessian_approximation': 'limited-memory',
+                         'linear_solver': solver,
+                         'limited_memory_max_history': 100,
+                         'limited_memory_max_skipping': 1,
+                         'mu_strategy': 'adaptive',
+                         'tol': 1e-8,
+                         'acceptable_tol': 1e-7,
+                         'acceptable_iter': 100,
+                         'max_iter': max_iter}
+        for option in option_specs.keys():
+            nlp.addOption(option, option_specs[option])
+
+        (x, info) = nlp.solve(x0)
+
+        # Set up variable names
+        alphas = ['{0}_a'.format(i) for i in self.df_coordinates['id'].tolist()]
+        if full_vars:
+            longs = ['{0}_lng'.format(i) for i in self.df_coordinates['id'].tolist()]
+            lats = ['{0}_lat'.format(i) for i in self.df_coordinates['id'].tolist()]
+            headers = ['zeta', 'useless'] + longs + lats + alphas
+        else:
+            longs = ['{0}_lng'.format(i) for i in self.df_unknown['id'].tolist()]
+            lats = ['{0}_lat'.format(i) for i in self.df_unknown['id'].tolist()]
+            headers = ['zeta'] + longs + lats + alphas
+
+        df = pd.DataFrame(data = [x],
+                          columns = headers)
+        df['obj_val'] = info['obj_val']
+        df['status'] = info['status']
+        df['status_msg'] = info['status_msg']
+        df['status_msg'] = df['status_msg'].str.replace(';', '')
+
+        #Add initial condition
+        for ival in range(len(x0)):
+            df['x0_'+str(ival)] = x0[ival]
+
+        return df
+
+
+    def gen_data(self,
+                 x0,
+                 rank = None,
+                 max_iter = 25000,
+                 full_vars = False,
+                 set_elasticity=None,
+                 no_constr=False):
+        """ Run `self.solve` for many initial values.
+
+        This function is the one called when running estimation in parallel.
+
+        Args:
+            x0 (numpy.ndarray): The array of initial conditions. Each row is an
+                initial condition.
+            rank (int): Process number in parallelized computing.
+
+        Returns:
+            DataFrame: simulation dataframe sorted by objective value
+
+        Warning:
+            Make sure `full_vars` is consistent with `x0`.
+        """
+        data = self.solve( x0[0, :],
+                           max_iter=max_iter,
+                           full_vars=full_vars,
+                           set_elasticity=set_elasticity,
+                           no_constr=no_constr)
+        len_sim = x0.shape[0]
+        for i in range(1, len_sim):
+            i_val = x0[i, :]
+            data = data.append( self.solve(i_val,
+                                           max_iter = max_iter,
+                                           full_vars = full_vars,
+                                           set_elasticity = set_elasticity,
+                                           no_constr = no_constr) )
+
+        if rank != None:
+            data['process'] = rank
+
+        # Sort
+        return data.sort_values('obj_val')
+
+
+    def check_bounds_hold(self, varlist, bounds):
+        """ Check whether coordinates in `arg` satisfy bounds.
+
+        Args:
+            bounds (tuple): the output of `self.get_bounds`.
+            arg (numpy.ndarray): the argument in short format (as appears in
+                IPOPT output).
+
+        Returns:
+            bool: True if bounds hold, False otherwise.
+        """
+        # Unpack coordinates
+        i = self.div_indices[False]
+        lng = varlist[i['long_s']: i['long_e']]
+        lat = varlist[i['lat_s']: i['lat_e']]
+
+        # Get corresponding bounds
+        lng_lb = bounds[0][i['long_s']: i['long_e']]
+        lat_lb = bounds[0][i['lat_s']: i['lat_e']]
+        lng_ub = bounds[1][i['long_s']: i['long_e']]
+        lat_ub = bounds[1][i['lat_s']: i['lat_e']]
+
+        bools_lat_lb = np.greater_equal(lat, lat_lb)
+        bools_lat_ub = np.greater_equal(lat_ub, lat)
+        bools_lng_lb = np.greater_equal(lng, lng_lb)
+        bools_lng_ub = np.greater_equal(lng_ub, lng)
+
+        return np.prod( np.concatenate((bools_lat_lb,
+                                        bools_lat_ub,
+                                        bools_lng_lb,
+                                        bools_lng_ub))
+                      )
+
+
+
 
 class EstimateModernProof(EstimateBase):
     """ Class for estimation procedures on modern dataset, proof of concept.
@@ -1219,8 +1267,13 @@ class EstimateModernProof(EstimateBase):
     """
 
     def __init__(self,
-                 rand_lost_cities):
+                 rand_lost_cities,
+                 lat = (35, 43),
+                 lng = (25, 45)):
         EstimateBase.__init__(self, build_type='directional')
+
+        self.lat = lat
+        self.lng = lng
 
         ## Paths
         root = config.get('paths', 'root')
@@ -1228,12 +1281,21 @@ class EstimateModernProof(EstimateBase):
 
         # Load processed datasets
         self.df_coordinates = pd.read_csv(root + process + 'modern'
-                                          + '/coordinates_all.csv')
+                                          + '/modern_cities_all_coordinates.csv')
         self.df_iticount = pd.read_csv(root + process + 'modern'
-                                       + '/estimation_data_all_directional.csv')
+                                       + '/estimation_data_directional.csv')
 
         # Save number of cities
         self.num_cities = len(self.df_coordinates)
+
+        # Rename coordinates columns for consistency
+        self.df_coordinates.rename({'name': 'city_name',
+                                    'x_c': 'long_x',
+                                    'y_c': 'lat_y'}, axis = 1)
+
+        # Separate coordinates data from id-names data
+        self.df_id = self.df_coordinates[['city_name', 'id']]
+        self.df_coordinates = self.df_coordinates[['id', 'long_x', 'lat_y']]
 
         # Loose cities
         load = Loader()
@@ -1299,6 +1361,167 @@ class EstimateModernProof(EstimateBase):
 
         # Save trade shares (to speed up self.get_errors)
         self.df_shares = self.df_iticount['s_ij'].values
+
+
+    def get_bounds(self, full_vars=False):
+        """ Fetch the upper and lower bounds for all entries in `varlist`.
+
+        Returns:
+            tuple: (lb, ub), where lb and ub are of type `list` for the bounds.
+        """
+        if full_vars:
+            num_vars = 2 + 3*self.num_cities
+        else:
+            num_vars = 1 + 2*self.num_cities_unknown + self.num_cities
+
+        lb = num_vars * [-1.0e20]
+        ub = num_vars * [1.0e20]
+
+        # zeta should be larger than zero
+        lb[0] = 0.0
+
+        i = self.div_indices[full_vars]
+        dit = {'long': 'long_x', 'lat': 'lat_y'}
+        unknown_lb = { 'long': self.num_cities_unknown * [self.lng[0]],
+                       'lat': self.num_cities_unknown * [self.lat[0]] }
+        unknown_ub = { 'long': self.num_cities_unknown * [self.lng[1]],
+                       'lat': self.num_cities_unknown * [self.lat[1]] }
+        if full_vars:
+            lb[1] = 0
+            ub[1] = 0
+            for c in dit.keys():
+                # Known locations are given
+                lb[i[c+'_s']: i[c+'_unknown_s']] = self.df_known[dit[c]].tolist()
+                ub[i[c+'_s']: i[c+'_unknown_s']] = self.df_known[dit[c]].tolist()
+                # Unknown location constraints
+                lb[i[c+'_unknown_s']: i[c+'_e']] = unknown_lb[c]
+                ub[i[c+'_unknown_s']: i[c+'_e']] = unknown_ub[c]
+        else:
+            for c in dit.keys():
+                # Unknown location constraints
+                lb[i[c+'_s']: i[c+'_e']] = unknown_lb[c]
+                ub[i[c+'_s']: i[c+'_e']] = unknown_ub[c]
+
+        # alphas should be positive
+        lb[i['a_s']:] = self.num_cities * [0.0]
+
+        # Normalization
+        lb[i['a_s'] + self.id_normalized] = 100.0
+        ub[i['a_s'] + self.id_normalized] = 100.0
+
+        return (lb, ub)
+
+
+    def solve(self,
+              x0,
+              max_iter = 25000,
+              full_vars = False,
+              solver='ma57'):
+        """ Solve the sum of squared distances minimization problem with IPOPT.
+
+        Args:
+            x0 (list): The initial value.
+            max_iter (int): Maximum iterations before IPOPT stops.
+            solver (str): Linear solver. 'ma57' is the default. If not
+                available, use 'mumps'.
+
+        Returns:
+            A one-row dataframe with optimization information.
+        """
+        # Cast x0 as np.float64. See numpy bug in `self.haversine_approx`.
+        x0 = np.float64(x0)
+
+        bounds = self.get_bounds(full_vars)
+
+        assert len(bounds[0]) == len(x0)
+        #print('Low bound:')
+        #print(bounds[0])
+        #print('High bound:')
+        #print(bounds[1])
+        #print('max_iter:' + str(max_iter))
+
+        nlp = ipopt.problem( n=len(x0),
+                             m=0,
+                             problem_obj=OptimizerAncient(build_type=self.build_type,
+                                                   full_vars=full_vars),
+                             lb=bounds[0],
+                             ub=bounds[1] )
+
+        # Add IPOPT options (some jhwi options were default)
+        option_specs = { 'hessian_approximation': 'limited-memory',
+                         'linear_solver': solver,
+                         'limited_memory_max_history': 100,
+                         'limited_memory_max_skipping': 1,
+                         'mu_strategy': 'adaptive',
+                         'tol': 1e-8,
+                         'acceptable_tol': 1e-7,
+                         'acceptable_iter': 100,
+                         'max_iter': max_iter}
+        for option in option_specs.keys():
+            nlp.addOption(option, option_specs[option])
+
+        (x, info) = nlp.solve(x0)
+
+        # Set up variable names
+        alphas = ['{0}_a'.format(i) for i in self.df_coordinates['id'].tolist()]
+        if full_vars:
+            longs = ['{0}_lng'.format(i) for i in self.df_coordinates['id'].tolist()]
+            lats = ['{0}_lat'.format(i) for i in self.df_coordinates['id'].tolist()]
+            headers = ['zeta', 'useless'] + longs + lats + alphas
+        else:
+            longs = ['{0}_lng'.format(i) for i in self.df_unknown['id'].tolist()]
+            lats = ['{0}_lat'.format(i) for i in self.df_unknown['id'].tolist()]
+            headers = ['zeta'] + longs + lats + alphas
+
+        df = pd.DataFrame(data = [x],
+                          columns = headers)
+        df['obj_val'] = info['obj_val']
+        df['status'] = info['status']
+        df['status_msg'] = info['status_msg']
+        df['status_msg'] = df['status_msg'].str.replace(';', '')
+
+        #Add initial condition
+        for ival in range(len(x0)):
+            df['x0_'+str(ival)] = x0[ival]
+
+        return df
+
+
+    def gen_data(self,
+                 x0,
+                 rank = None,
+                 max_iter = 25000,
+                 full_vars = False):
+        """ Run `self.solve` for many initial values.
+
+        This function is the one called when running estimation in parallel.
+
+        Args:
+            x0 (numpy.ndarray): The array of initial conditions. Each row is an
+                initial condition.
+            rank (int): Process number in parallelized computing.
+
+        Returns:
+            DataFrame: simulation dataframe sorted by objective value
+
+        Warning:
+            Make sure `full_vars` is consistent with `x0`.
+        """
+        data = self.solve( x0[0, :],
+                           max_iter=max_iter,
+                           full_vars=full_vars)
+        len_sim = x0.shape[0]
+        for i in range(1, len_sim):
+            i_val = x0[i, :]
+            data = data.append( self.solve(i_val,
+                                           max_iter = max_iter,
+                                           full_vars = full_vars) )
+
+        if rank != None:
+            data['process'] = rank
+
+        # Sort
+        return data.sort_values('obj_val')
 
 
 
@@ -1473,6 +1696,9 @@ class EstimateModern(EstimateBase):
         Returns:
             A one-row dataframe with optimization information.
         """
+        # Cast x0 as np.float64. See numpy bug in `self.haversine_approx`.
+        x0 = np.float64(x0)
+
         # Set bounds
         bounds = self.get_bounds(set_elasticity)
 
