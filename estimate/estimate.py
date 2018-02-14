@@ -1066,7 +1066,7 @@ class EstimateAncient(EstimateBase):
         lb[i['a_s'] + self.id_normalized] = 100.0
         ub[i['a_s'] + self.id_normalized] = 100.0
 
-        print(self.id_normalized)
+        #print(self.id_normalized)
 
         return (lb, ub)
 
@@ -1166,7 +1166,8 @@ class EstimateAncient(EstimateBase):
                  max_iter = 25000,
                  full_vars = False,
                  set_elasticity=None,
-                 no_constr=False):
+                 no_constr=False,
+                 solver = 'ma57'):
         """ Run `self.solve` for many initial values.
 
         This function is the one called when running estimation in parallel.
@@ -1186,7 +1187,8 @@ class EstimateAncient(EstimateBase):
                            max_iter=max_iter,
                            full_vars=full_vars,
                            set_elasticity=set_elasticity,
-                           no_constr=no_constr)
+                           no_constr=no_constr,
+                           solver = solver)
         len_sim = x0.shape[0]
         for i in range(1, len_sim):
             i_val = x0[i, :]
@@ -1194,7 +1196,8 @@ class EstimateAncient(EstimateBase):
                                            max_iter = max_iter,
                                            full_vars = full_vars,
                                            set_elasticity = set_elasticity,
-                                           no_constr = no_constr) )
+                                           no_constr = no_constr,
+                                           solver = solver) )
 
         if rank != None:
             data['process'] = rank
@@ -1235,6 +1238,192 @@ class EstimateAncient(EstimateBase):
                                         bools_lng_lb,
                                         bools_lng_ub))
                       )
+
+
+
+class EstimateAncientNoQattara(EstimateAncient):
+
+    def __init__(self,
+                 build_type,
+                 lat = (36, 42),
+                 lng = (27, 45),
+                 lng_estimated = None,
+                 lat_estimated = None):
+        EstimateAncient.__init__(self,
+                                 build_type,
+                                 lat,
+                                 lng,
+                                 lng_estimated,
+                                 lat_estimated)
+        # Drop Qattara
+        self.df_coordinates = self.df_coordinates.loc[
+                self.df_coordinates['id'] != 'qa01',
+                : ]
+        self.df_iticount = self.df_iticount.loc[
+                (self.df_iticount['id_i'] != 'qa01')
+                & (self.df_iticount['id_j'] != 'qa01'),
+                : ]
+        ## Reindex
+        self.df_coordinates = self.df_coordinates.reset_index(drop = True)
+        self.df_iticount = self.df_iticount.reset_index(drop = True)
+
+        # Save number of cities
+        self.num_cities = len(self.df_coordinates)
+
+        self.id_normalized = int(
+                self.df_coordinates.loc[self.df_coordinates['id'] == 'ka01',
+                                        'id_jhwi'].values[0]
+                ) - 1
+
+        # Known cities
+        self.df_known = self.df_coordinates.loc[
+            self.df_coordinates['cert'] < 3,
+            ['id', 'long_x', 'lat_y']
+        ]
+        # Lost cities
+        self.df_unknown = self.df_coordinates.loc[
+                self.df_coordinates['cert'] == 3,
+            ['id', 'long_x', 'lat_y']
+        ]
+
+        self.num_cities_known = len(self.df_known)
+        self.num_cities_unknown = len(self.df_unknown)
+
+        # Automatic differentiation of objective and errors
+
+        ## Objective
+        ### Using all vars
+        def objective_full_vars(varlist):
+            """ This is the formulation for autograd. """
+            return self.sqerr_sum(varlist, full_vars=True)
+        self.grad_full_vars = grad(objective_full_vars)
+
+        ## Errors
+        ### Using all vars
+        def error_autograd_full_vars(v):
+            return self.get_errors(v, full_vars=True)
+        self.jac_errors_full_vars = jacobian(error_autograd_full_vars)
+
+        # Save indices to unpack argument of objective and gradient
+        # There is a set of indices if we are using the full set of coordinates
+        # as arguments, or if we use only the only the unknown cities
+        # coordinates as arguments.
+        self.div_indices = {
+            True: {'long_unknown_s': 2 + self.num_cities_known,
+                   'long_s': 2,
+                   'long_e': 2 + self.num_cities,
+                   'lat_unknown_s': 2 + self.num_cities + self.num_cities_known,
+                   'lat_s': 2 + self.num_cities,
+                   'lat_e': 2 + 2*self.num_cities,
+                   'a_s': 2 + 2*self.num_cities,
+                   'a_e': 2 + 3*self.num_cities},
+            False: {'long_s': 1,
+                    'long_e': 1 + self.num_cities_unknown,
+                    'lat_s': 1 + self.num_cities_unknown,
+                    'lat_e': 1 + 2*self.num_cities_unknown,
+                    'a_s': 1 + 2*self.num_cities_unknown,
+                    'a_e': 1 + 2*self.num_cities_unknown + self.num_cities}
+        }
+
+        # Save array index that views array of size len(self.df_coordinates)
+        # and selects off-diagonal elements. See self.tile_nodiag.
+        i = np.repeat(np.arange(1, self.num_cities), self.num_cities)
+        self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
+
+        # Save trade shares (to speed up self.get_errors)
+        self.df_shares = self.df_iticount['s_ij'].values
+
+
+    def solve(self,
+              x0,
+              constraint_type = 'static',
+              max_iter = 25000,
+              full_vars = False,
+              solver='ma57',
+              set_elasticity=None,
+              no_constr=False):
+        """ Solve the sum of squared distances minimization problem with IPOPT.
+
+        Args:
+            x0 (list): The initial value.
+            max_iter (int): Maximum iterations before IPOPT stops.
+            constraint_type (str): One of 'static' or 'dynamic'.
+            solver (str): Linear solver. 'ma57' is the default. If not
+                available, use 'mumps'.
+
+        Returns:
+            A one-row dataframe with optimization information.
+        """
+        # Cast x0 as np.float64. See numpy bug in `self.haversine_approx`.
+        x0 = np.float64(x0)
+
+        # Set bounds
+        if constraint_type == 'static':
+            constr = self.replace_id_coord(self.df_constr_stat,
+                                           no_constr=no_constr)
+        elif constraint_type == 'dynamic':
+            constr = self.replace_id_coord(self.df_constr_dyn,
+                                           no_constr=no_constr)
+        else:
+            raise ValueError("Please specify the constraint type to be "
+                             + "'static' or 'dynamic'")
+        bounds = self.get_bounds(constr, full_vars, set_elasticity)
+
+        assert len(bounds[0]) == len(x0)
+        assert len(bounds[1]) == len(x0)
+        #print(x0)
+        #print(len(x0))
+        #print('Low bound:')
+        #print(bounds[0])
+        #print('High bound:')
+        #print(bounds[1])
+
+        nlp = ipopt.problem( n=len(x0),
+                             m=0,
+                             problem_obj=OptimizerAncientNoQattara(build_type=self.build_type,
+                                                                   full_vars=full_vars),
+                             lb=bounds[0],
+                             ub=bounds[1] )
+
+        # Add IPOPT options (some jhwi options were default)
+        option_specs = { 'hessian_approximation': 'limited-memory',
+                         'linear_solver': solver,
+                         'limited_memory_max_history': 100,
+                         'limited_memory_max_skipping': 1,
+                         'mu_strategy': 'adaptive',
+                         'tol': 1e-8,
+                         'acceptable_tol': 1e-7,
+                         'acceptable_iter': 100,
+                         'max_iter': max_iter}
+        for option in option_specs.keys():
+            nlp.addOption(option, option_specs[option])
+
+        (x, info) = nlp.solve(x0)
+
+        # Set up variable names
+        alphas = ['{0}_a'.format(i) for i in self.df_coordinates['id'].tolist()]
+        if full_vars:
+            longs = ['{0}_lng'.format(i) for i in self.df_coordinates['id'].tolist()]
+            lats = ['{0}_lat'.format(i) for i in self.df_coordinates['id'].tolist()]
+            headers = ['zeta', 'useless'] + longs + lats + alphas
+        else:
+            longs = ['{0}_lng'.format(i) for i in self.df_unknown['id'].tolist()]
+            lats = ['{0}_lat'.format(i) for i in self.df_unknown['id'].tolist()]
+            headers = ['zeta'] + longs + lats + alphas
+
+        df = pd.DataFrame(data = [x],
+                          columns = headers)
+        df['obj_val'] = info['obj_val']
+        df['status'] = info['status']
+        df['status_msg'] = info['status_msg']
+        df['status_msg'] = df['status_msg'].str.replace(';', '')
+
+        #Add initial condition
+        for ival in range(len(x0)):
+            df['x0_'+str(ival)] = x0[ival]
+
+        return df
+
 
 
 
@@ -1986,6 +2175,23 @@ class OptimizerAncient(EstimateAncient):
 
     def __init__(self, build_type, full_vars):
         EstimateAncient.__init__(self, build_type)
+        self.full_vars = full_vars
+
+    def objective(self, varlist):
+        return self.sqerr_sum(varlist, full_vars = self.full_vars)
+
+    def gradient(self, varlist):
+        #print(varlist)
+        if self.full_vars:
+            return self.grad_full_vars(varlist)
+        else:
+            return self.grad(varlist)
+
+
+class OptimizerAncientNoQattara(EstimateAncientNoQattara):
+
+    def __init__(self, build_type, full_vars):
+        EstimateAncientNoQattara.__init__(self, build_type)
         self.full_vars = full_vars
 
     def objective(self, varlist):
