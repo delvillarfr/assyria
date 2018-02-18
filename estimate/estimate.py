@@ -150,22 +150,30 @@ class EstimateBase(object):
         build_type (str): One of "directional" or "non-directional".
     """
 
-    def __init__(self, build_type):
+    def __init__(self, build_type, omega = None):
         self.build_type = build_type
+        self.omega = omega
 
         # Automatic differentiation of objective and errors
-
-        ## Objective
-        ### Using only relevant vars
-        def objective(varlist):
-            """ This is the formulation for autograd. """
-            return self.sqerr_sum(varlist)
-        self.grad = grad(objective)
 
         ## Errors
         def error_autograd(v):
             return self.get_errors(v)
         self.jac_errors = jacobian(error_autograd)
+
+        ## Objective (assume full_vars is False)
+        def objective(varlist):
+            """ This is the formulation for autograd. """
+            return self.sqerr_sum(varlist)
+        self.grad = grad(objective)
+
+        ## With Feasible Generalized Nonlinear Least Squares
+        if omega is not None:
+            self.omega_inv = np.linalg.inv(omega)
+            def objective_gen(varlist):
+                """ This is the formulation for autograd. """
+                return self.sqerr_sum_gen(varlist, self.omega_inv)
+            self.grad_gen = grad(objective_gen)
 
 
     def haversine_approx(self, coord_i, coord_j):
@@ -333,6 +341,26 @@ class EstimateBase(object):
         """
         errors = self.get_errors(varlist, full_vars)
         return np.dot(errors, errors)
+
+
+    def sqerr_sum_gen(self, varlist, omega_inv, full_vars = False):
+        """ Gets the weighted sum of squared errors.
+
+        This is the objective function for the second stage estimation via
+        Feasible Generalized Nonlinear Least Squares, as depicted by Cameron
+        and Trivedi (2005), p. 156.
+
+        Args:
+            omega_inv (numpy.ndarray): The weighting matrix in the quadratic
+                form.
+
+        Returns:
+            numpy.float64: The value of the quadratic form given the data, the
+                model trade shares, and the inverse Omega matrix.
+        """
+        errors = self.get_errors(varlist, full_vars)
+        part_1 = np.dot(errors, omega_inv)
+        return np.dot(part_1, errors)
 
 
     def full_to_short_i(self):
@@ -834,8 +862,9 @@ class EstimateAncient(EstimateBase):
                  lng = (27, 45),
                  rand_lost_cities = None,
                  lng_estimated = None,
-                 lat_estimated = None):
-        EstimateBase.__init__(self, build_type)
+                 lat_estimated = None,
+                 omega = None):
+        EstimateBase.__init__(self, build_type, omega = omega)
         self.lat = lat
         self.lng = lng
 
@@ -1115,10 +1144,12 @@ class EstimateAncient(EstimateBase):
 
         nlp = ipopt.problem( n=len(x0),
                              m=0,
-                             problem_obj=OptimizerAncient(build_type=self.build_type,
-                                                   full_vars=full_vars),
+                             problem_obj=OptimizerAncient(build_type = self.build_type,
+                                                          omega = self.omega,
+                                                          full_vars = full_vars),
                              lb=bounds[0],
                              ub=bounds[1] )
+
 
         # Add IPOPT options (some jhwi options were default)
         option_specs = { 'hessian_approximation': 'limited-memory',
@@ -2173,19 +2204,35 @@ class EstimateModern(EstimateBase):
 # Now define optimization problems for IPOPT
 class OptimizerAncient(EstimateAncient):
 
-    def __init__(self, build_type, full_vars):
-        EstimateAncient.__init__(self, build_type)
+    def __init__(self, build_type, omega = None, full_vars = False):
+        EstimateAncient.__init__(self, build_type, omega = omega)
         self.full_vars = full_vars
 
+        # Set objective and gradient depending on whether we have an omega.
+        if omega is None:
+            def obj_fn(varlist):
+                return self.sqerr_sum(varlist, full_vars = self.full_vars)
+            ## Grad here depends on whether full_vars is on or off.
+            if self.full_vars:
+                self.grad_fn = self.grad_full_vars
+            else:
+                self.grad_fn = self.grad
+        else:
+            def obj_fn(varlist):
+                return self.sqerr_sum_gen(varlist,
+                                          self.omega_inv,
+                                          full_vars = self.full_vars)
+            self.grad_fn = self.grad_gen
+
+        self.obj_fn = obj_fn
+
+
     def objective(self, varlist):
-        return self.sqerr_sum(varlist, full_vars = self.full_vars)
+        return self.obj_fn(varlist)
+
 
     def gradient(self, varlist):
-        #print(varlist)
-        if self.full_vars:
-            return self.grad_full_vars(varlist)
-        else:
-            return self.grad(varlist)
+        return self.grad_fn(varlist)
 
 
 class OptimizerAncientNoQattara(EstimateAncientNoQattara):
