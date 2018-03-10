@@ -306,7 +306,7 @@ class EstimateBase(object):
 
         Args:
             varlist (numpy.ndarray):it is composed of
-                `[zeta, alpha, lat_guess, lng_guess]`.
+                `[zeta, lng_guess, lat_guess, alpha]`.
 
         Returns:
             numpy.ndarray: the difference between data and model trade shares.
@@ -522,11 +522,6 @@ class EstimateBase(object):
         Returns:
             numpy.ndarray: The variance-covariance matrix of the estimators.
         """
-        errors = self.get_errors(varlist, full_vars)
-
-        # Make column vector
-        errors = np.expand_dims(errors, 1)
-
         if full_vars:
             i = self.div_indices[True]
             jac = self.jac_errors_full_vars(varlist)
@@ -548,6 +543,10 @@ class EstimateBase(object):
             jac = np.delete(jac, 0, axis=1)
 
         bread = np.linalg.inv(np.dot( np.transpose(jac), jac ))
+
+        errors = self.get_errors(varlist, full_vars)
+        # Make column vector
+        errors = np.expand_dims(errors, 1)
 
         # Build variance-covariance matrix, according to var_type
         if var_type == 'white':
@@ -1457,6 +1456,161 @@ class EstimateAncientNoQattara(EstimateAncient):
 
 
 
+class EstimateAncientMLE(EstimateAncient):
+
+    def __init__(self,
+                 build_type,
+                 lat = (36, 42),
+                 lng = (27, 45),
+                 lng_estimated = None,
+                 lat_estimated = None):
+        EstimateAncient.__init__(self,
+                                 build_type,
+                                 lat,
+                                 lng,
+                                 lng_estimated,
+                                 lat_estimated)
+
+        ## Objective (assume full_vars is False)
+        def objective(varlist):
+            """ This is the formulation for autograd. """
+            return self.mle_objective(varlist)
+        self.grad = grad(objective)
+
+
+    def mle_objective(self, varlist, full_vars=False):
+        """ Get the log objective specification.
+
+        Gets the sum of data shares times log(model shares).
+
+        Args:
+            varlist (numpy.ndarray): it is composed of
+                `[zeta, lng_guess, lat_guess, alpha]`.
+
+        Returns:
+            numpy.ndarray: the difference between data and model trade shares.
+        """
+        # Unpack arguments
+        zeta = varlist[0]
+
+        i = self.div_indices[full_vars]
+        lng_guess = varlist[i['long_s']: i['long_e']]
+        lat_guess = varlist[i['lat_s']: i['lat_e']]
+        alpha = varlist[i['a_s']:]
+
+        #assert len(lat_guess) == len(lng_guess)
+
+        s_ij_model = self.s_ij_model(zeta,
+                                     alpha,
+                                     self.fetch_dist(lat_guess,
+                                                     lng_guess,
+                                                     full_vars)
+                                    )
+
+        #print('Max s_ij_model:')
+        #print(np.max(s_ij_model))
+        #print('Min s_ij_model:')
+        #print(np.min(s_ij_model))
+
+        # Scale shares
+        s_ij_model = 1.0e+50 * s_ij_model
+
+        summands = self.df_shares * np.log(s_ij_model)
+
+        return - np.sum(summands)
+
+
+
+    def solve(self,
+              x0,
+              constraint_type = 'static',
+              max_iter = 25000,
+              full_vars = False,
+              solver='ma57',
+              set_elasticity=None,
+              no_constr=False):
+        """ Solve the sum of squared distances minimization problem with IPOPT.
+
+        Args:
+            x0 (list): The initial value.
+            max_iter (int): Maximum iterations before IPOPT stops.
+            constraint_type (str): One of 'static' or 'dynamic'.
+            solver (str): Linear solver. 'ma57' is the default. If not
+                available, use 'mumps'.
+
+        Returns:
+            A one-row dataframe with optimization information.
+        """
+        # Cast x0 as np.float64. See numpy bug in `self.haversine_approx`.
+        x0 = np.float64(x0)
+
+        # Set bounds
+        if constraint_type == 'static':
+            constr = self.replace_id_coord(self.df_constr_stat,
+                                           no_constr=no_constr)
+        elif constraint_type == 'dynamic':
+            constr = self.replace_id_coord(self.df_constr_dyn,
+                                           no_constr=no_constr)
+        else:
+            raise ValueError("Please specify the constraint type to be "
+                             + "'static' or 'dynamic'")
+        bounds = self.get_bounds(constr, full_vars, set_elasticity)
+
+        assert len(bounds[0]) == len(x0)
+        assert len(bounds[1]) == len(x0)
+        #print(x0)
+        #print(len(x0))
+        #print('Low bound:')
+        #print(bounds[0])
+        #print('High bound:')
+        #print(bounds[1])
+
+        nlp = ipopt.problem( n=len(x0),
+                             m=0,
+                             problem_obj=OptimizerAncientMLE(build_type=self.build_type,
+                                                                   full_vars=full_vars),
+                             lb=bounds[0],
+                             ub=bounds[1] )
+
+        # Add IPOPT options (some jhwi options were default)
+        option_specs = { 'hessian_approximation': 'limited-memory',
+                         'linear_solver': solver,
+                         'limited_memory_max_history': 100,
+                         'limited_memory_max_skipping': 1,
+                         'mu_strategy': 'adaptive',
+                         'tol': 1e-8,
+                         'acceptable_tol': 1e-7,
+                         'acceptable_iter': 100,
+                         'max_iter': max_iter}
+        for option in option_specs.keys():
+            nlp.addOption(option, option_specs[option])
+
+        (x, info) = nlp.solve(x0)
+
+        # Set up variable names
+        alphas = ['{0}_a'.format(i) for i in self.df_coordinates['id'].tolist()]
+        if full_vars:
+            longs = ['{0}_lng'.format(i) for i in self.df_coordinates['id'].tolist()]
+            lats = ['{0}_lat'.format(i) for i in self.df_coordinates['id'].tolist()]
+            headers = ['zeta', 'useless'] + longs + lats + alphas
+        else:
+            longs = ['{0}_lng'.format(i) for i in self.df_unknown['id'].tolist()]
+            lats = ['{0}_lat'.format(i) for i in self.df_unknown['id'].tolist()]
+            headers = ['zeta'] + longs + lats + alphas
+
+        df = pd.DataFrame(data = [x],
+                          columns = headers)
+        df['obj_val'] = info['obj_val']
+        df['status'] = info['status']
+        df['status_msg'] = info['status_msg']
+        df['status_msg'] = df['status_msg'].str.replace(';', '')
+
+        #Add initial condition
+        for ival in range(len(x0)):
+            df['x0_'+str(ival)] = x0[ival]
+
+        return df
+
 
 
 class EstimateModernProof(EstimateBase):
@@ -2235,6 +2389,8 @@ class OptimizerAncient(EstimateAncient):
         return self.grad_fn(varlist)
 
 
+
+
 class OptimizerAncientNoQattara(EstimateAncientNoQattara):
 
     def __init__(self, build_type, full_vars):
@@ -2250,6 +2406,27 @@ class OptimizerAncientNoQattara(EstimateAncientNoQattara):
             return self.grad_full_vars(varlist)
         else:
             return self.grad(varlist)
+
+
+
+
+class OptimizerAncientMLE(EstimateAncientMLE):
+
+    def __init__(self, build_type, full_vars):
+        EstimateAncientMLE.__init__(self, build_type)
+        self.full_vars = full_vars
+
+    def objective(self, varlist):
+        return self.mle_objective(varlist, full_vars = self.full_vars)
+
+    def gradient(self, varlist):
+        #print(varlist)
+        if self.full_vars:
+            return self.grad_full_vars(varlist)
+        else:
+            return self.grad(varlist)
+
+
 
 
 class OptimizerModern(EstimateModern):
