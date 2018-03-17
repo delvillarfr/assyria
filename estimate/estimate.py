@@ -828,6 +828,7 @@ class EstimateBase(object):
 
 
 
+
 class EstimateAncient(EstimateBase):
     """ Class for estimation procedures on ancient dataset.
 
@@ -1271,6 +1272,7 @@ class EstimateAncient(EstimateBase):
 
 
 
+
 class EstimateAncientNoQattara(EstimateAncient):
 
     def __init__(self,
@@ -1456,6 +1458,7 @@ class EstimateAncientNoQattara(EstimateAncient):
 
 
 
+
 class EstimateAncientMLE(EstimateAncient):
 
     def __init__(self,
@@ -1477,18 +1480,27 @@ class EstimateAncientMLE(EstimateAncient):
             return self.mle_objective(varlist)
         self.grad = grad(objective)
 
+        ## Errors
+        def increments_autograd(v):
+            return self.log_L_increments(v)
+        self.jac_increments = jacobian(increments_autograd)
 
-    def mle_objective(self, varlist, full_vars=False):
-        """ Get the log objective specification.
+        ## Using all vars
+        def increments_autograd_full_vars(v):
+            return self.log_L_increments(v, full_vars=True)
+        self.jac_increments_full_vars = jacobian(increments_autograd_full_vars)
 
-        Gets the sum of data shares times log(model shares).
+
+    def log_L_increments(self, varlist, full_vars=False):
+        """ Get the log likelihood increments.
 
         Args:
             varlist (numpy.ndarray): it is composed of
                 `[zeta, lng_guess, lat_guess, alpha]`.
 
         Returns:
-            numpy.ndarray: the difference between data and model trade shares.
+            numpy.ndarray: the one-dimensional array of log likelihood
+            increments.
         """
         # Unpack arguments
         zeta = varlist[0]
@@ -1513,12 +1525,23 @@ class EstimateAncientMLE(EstimateAncient):
         #print(np.min(s_ij_model))
 
         # Scale shares
-        s_ij_model = 1.0e+50 * s_ij_model
+        #s_ij_model = 1.0e+50 * s_ij_model
 
-        summands = self.df_shares * np.log(s_ij_model)
+        return self.df_shares * np.log(s_ij_model)
 
-        return - np.sum(summands)
 
+    def mle_objective(self, varlist, full_vars=False):
+        """ Get the log objective specification.
+
+        Gets the sum of data shares times log(model shares).
+
+        Returns:
+            float: The negative of the likelihood function evaluated at
+                varlist.
+        """
+        increments = self.log_L_increments(varlist, full_vars = full_vars)
+
+        return - np.sum(increments)
 
 
     def solve(self,
@@ -1610,6 +1633,103 @@ class EstimateAncientMLE(EstimateAncient):
             df['x0_'+str(ival)] = x0[ival]
 
         return df
+
+
+    def get_variance(self,
+                     varlist,
+                     var_type='white',
+                     zeta_fixed=False,
+                     full_vars=False):
+        """ Compute the variance-covariance matrix of the estimators.
+
+        This overwrites the analogous function in EstimateBase.
+
+        Args:
+            var_type (str): One of 'white' or 'homo'. This argument is useless
+                and is provided only for compatibility.
+
+        Returns:
+            numpy.ndarray: The variance-covariance matrix of the estimators.
+        """
+        if full_vars:
+            i = self.div_indices[True]
+            jac = self.jac_increments_full_vars(varlist)
+            jac = pd.DataFrame(jac)
+            jac = jac.drop(columns = ([1]
+                           + range(i['long_s'], i['long_unknown_s'])
+                           + range(i['lat_s'], i['lat_unknown_s'])))
+            jac = jac.values
+        else:
+            # Evaluate errors jacobian at estimated parameter.
+            jac = self.jac_increments(varlist)
+
+        # Remove fixed a
+        index_norm = self.div_indices[False]['a_s'] + self.id_normalized
+        jac = np.delete(jac, index_norm, axis=1)
+
+        # If zeta is fixed, remove it.
+        if zeta_fixed:
+            jac = np.delete(jac, 0, axis=1)
+
+        #print("Jacobian shape:")
+        #print(jac.shape)
+        jac_A = np.expand_dims(jac, 2)
+        jac_B = np.expand_dims(jac, 1)
+
+        #print("Before getting dat outer product")
+        #print(jac_A.shape)
+        #print(jac_B.shape)
+        #print(len(jac))
+
+        outer_prods = np.matmul(jac_A, jac_B)
+        A0 = np.sum(outer_prods, axis = 0)
+
+        return np.linalg.inv(A0)
+
+
+    def get_variance2(self,
+                      varlist,
+                      var_type='white',
+                      zeta_fixed=False,
+                      full_vars=False):
+        """ Compute the variance-covariance matrix of the estimators.
+
+        Another way to compute the asymptotic variance. Consistency test for
+        self.get_variance
+
+        Args:
+            var_type (str): One of 'white' or 'homo'. This argument is useless
+                and is provided only for compatibility.
+
+        Returns:
+            numpy.ndarray: The variance-covariance matrix of the estimators.
+        """
+        if full_vars:
+            i = self.div_indices[True]
+            jac = self.jac_increments_full_vars(varlist)
+            jac = pd.DataFrame(jac)
+            jac = jac.drop(columns = ([1]
+                           + range(i['long_s'], i['long_unknown_s'])
+                           + range(i['lat_s'], i['lat_unknown_s'])))
+            jac = jac.values
+        else:
+            # Evaluate errors jacobian at estimated parameter.
+            jac = self.jac_increments(varlist)
+
+        # Remove fixed a
+        index_norm = self.div_indices[False]['a_s'] + self.id_normalized
+        jac = np.delete(jac, index_norm, axis=1)
+
+        # If zeta is fixed, remove it.
+        if zeta_fixed:
+            jac = np.delete(jac, 0, axis=1)
+
+        outer_prods = np.empty((len(jac), 48, 48))
+        for i in range(len(jac)):
+            outer_prods[i] = np.outer(jac[i], jac[i])
+
+        return np.linalg.inv(np.sum(outer_prods, axis = 0))
+
 
 
 
@@ -1896,6 +2016,7 @@ class EstimateModernProof(EstimateBase):
 
         # Sort
         return data.sort_values('obj_val')
+
 
 
 
