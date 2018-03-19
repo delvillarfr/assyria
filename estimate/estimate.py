@@ -11,6 +11,7 @@ import pandas as pd
 import autograd.numpy as np
 from autograd import grad
 from autograd import jacobian
+from autograd import hessian
 import ipopt
 
 import sys
@@ -327,7 +328,7 @@ class EstimateBase(object):
                                                      lng_guess,
                                                      full_vars)
                                     )
-        return self.df_shares - s_ij_model
+        return self.shares - s_ij_model
 
 
     def sqerr_sum(self, varlist, full_vars=False):
@@ -517,7 +518,7 @@ class EstimateBase(object):
         homoskedasticity.
 
         Args:
-            var_type (str): One of 'white' or 'homo'.
+            var_type (str): One of 'white' or 'homo', or 'gmm'.
 
         Returns:
             numpy.ndarray: The variance-covariance matrix of the estimators.
@@ -542,14 +543,26 @@ class EstimateBase(object):
         if zeta_fixed:
             jac = np.delete(jac, 0, axis=1)
 
-        bread = np.linalg.inv(np.dot( np.transpose(jac), jac ))
+        scale = 1.0
+
+        bread = np.linalg.inv(scale * np.dot( np.transpose(jac), jac ))
 
         errors = self.get_errors(varlist, full_vars)
-        # Make column vector
-        errors = np.expand_dims(errors, 1)
 
         # Build variance-covariance matrix, according to var_type
-        if var_type == 'white':
+        if var_type == 'gmm':
+            ham = np.dot(np.transpose(jac), np.outer(scale*errors, scale*errors))
+            ham = np.dot(ham, jac)
+            print(ham.shape)
+            #ham = np.linalg.multi_dot((np.transpose(jac),
+            #                           np.outer(errors, errors),
+            #                           jac))
+            print(np.linalg.multi_dot((bread, ham, bread)))
+            return np.linalg.multi_dot((bread, ham, bread))
+
+        elif var_type == 'white':
+            # Make column vector
+            errors = np.expand_dims(errors, 1)
             ham = np.dot(np.transpose(jac * errors), jac * errors)
             return np.linalg.multi_dot((bread, ham, bread))
 
@@ -709,6 +722,10 @@ class EstimateBase(object):
         varlist = np.float64(varlist)
 
         # 1. Fetch standard error of estimates
+        varlist_cov_gmm = self.get_variance(varlist,
+                                              var_type='gmm',
+                                              zeta_fixed = zeta_fixed,
+                                              full_vars=True)
         varlist_cov_white = self.get_variance(varlist,
                                               var_type='white',
                                               zeta_fixed = zeta_fixed,
@@ -717,6 +734,9 @@ class EstimateBase(object):
                                              var_type='homo',
                                              zeta_fixed = zeta_fixed,
                                              full_vars=True)
+        size_cov_gmm = self.get_size_variance(varlist,
+                                                zeta_fixed = zeta_fixed,
+                                                var_type='gmm')
         size_cov_white = self.get_size_variance(varlist,
                                                 zeta_fixed = zeta_fixed,
                                                 var_type='white')
@@ -730,13 +750,17 @@ class EstimateBase(object):
         print(np.prod(np.diag(varlist_cov_homo) > 0.0))
         print(np.prod(np.diag(size_cov_white) > 0.0))
         print(np.prod(np.diag(size_cov_white) > 0.0))
+
+        varlist_sd_gmm = np.sqrt( np.diag(varlist_cov_gmm) )
         varlist_sd_white = np.sqrt( np.diag(varlist_cov_white) )
         varlist_sd_homo = np.sqrt( np.diag(varlist_cov_homo) )
+        size_sd_gmm = np.sqrt( np.diag(size_cov_gmm) )
         size_sd_white = np.sqrt( np.diag(size_cov_white) )
         size_sd_homo = np.sqrt( np.diag(size_cov_homo) )
 
         ## Add 0 sd for zeta if zeta is fixed
         if zeta_fixed:
+            varlist_sd_gmm = np.concatenate(([0.0], varlist_sd_gmm))
             varlist_sd_white = np.concatenate(([0.0], varlist_sd_white))
             varlist_sd_homo = np.concatenate(([0.0], varlist_sd_homo))
 
@@ -749,9 +773,11 @@ class EstimateBase(object):
 
         # 3. Save zeta.csv
         df_zeta = pd.DataFrame([[zeta,
+                                 varlist_sd_gmm[0],
                                  varlist_sd_white[0],
                                  varlist_sd_homo[0]]],
                                columns=['zeta',
+                                        'zeta_sd_gmm',
                                         'zeta_sd_white',
                                         'zeta_sd_homo']
                               )
@@ -761,9 +787,11 @@ class EstimateBase(object):
         ## Unpack arguments
         j = self.div_indices[False]
 
+        lng_gmm = varlist_sd_gmm[j['long_s']: j['long_e']]
         lng_white = varlist_sd_white[j['long_s']: j['long_e']]
         lng_homo = varlist_sd_homo[j['long_s']: j['long_e']]
 
+        lat_gmm = varlist_sd_gmm[j['lat_s']: j['lat_e']]
         lat_white = varlist_sd_white[j['lat_s']: j['lat_e']]
         lat_homo = varlist_sd_homo[j['lat_s']: j['lat_e']]
 
@@ -771,16 +799,20 @@ class EstimateBase(object):
         ids_coord = self.df_unknown['id'].values
         coord_array = np.column_stack((ids_coord,
                                        lng_estim,
+                                       lng_gmm,
                                        lng_white,
                                        lng_homo,
                                        lat_estim,
+                                       lat_gmm,
                                        lat_white,
                                        lat_homo))
         cols = ['id',
                 'longitude',
+                'longitude_sd_gmm',
                 'longitude_sd_white',
                 'longitude_sd_homo',
                 'latitude',
+                'latitude_sd_gmm',
                 'latitude_sd_white',
                 'latitude_sd_homo']
         coordinates = pd.DataFrame(coord_array, columns = cols)
@@ -792,26 +824,32 @@ class EstimateBase(object):
         size = self.get_size(varlist)
 
         alpha = varlist[i['a_s']:]
+        alpha_gmm = varlist_sd_gmm[j['a_s']:]
         alpha_white = varlist_sd_white[j['a_s']:]
         alpha_homo = varlist_sd_homo[j['a_s']:]
 
         ## Insert 0 s.e. for fixed alpha (for compat. with jhwi)
+        alpha_gmm = np.insert(alpha_gmm, self.id_normalized, 0.0)
         alpha_white = np.insert(alpha_white, self.id_normalized, 0.0)
         alpha_homo = np.insert(alpha_homo, self.id_normalized, 0.0)
 
         ids_city = self.df_coordinates['id'].values
         city_array = np.column_stack((ids_city,
                                       alpha,
+                                      alpha_gmm,
                                       alpha_white,
                                       alpha_homo,
                                       size,
+                                      size_sd_gmm,
                                       size_sd_white,
                                       size_sd_homo))
         cols = ['id',
                 'alpha',
+                'alpha_sd_gmm',
                 'alpha_sd_white',
                 'alpha_sd_homo',
                 'size',
+                'size_sd_gmm',
                 'size_sd_white',
                 'size_sd_homo'
                 ]
@@ -825,6 +863,76 @@ class EstimateBase(object):
         #    self.simulate_contour_data(varlist,
         #                               var_type=v,
         #                               full_vars=True)
+
+
+    def format_jhwi(self, cities, coordinates, zeta, loc):
+        """ Format results as Jhwi.
+
+        Args:
+            cities (pandas.DataFrame): The cities dataframe.
+            coordinates (pandas.DataFrame): The coordinates dataframe.
+            zeta (pandas.DataFrame): The zeta dataframe.
+
+        Saves csv in jhwi format.
+        """
+        jhwi = cities.copy()
+        jhwi = jhwi.merge(self.df_coordinates, on='id', how='left')
+
+        # Correct type of id_jhwi
+        jhwi['id_jhwi'] = jhwi['id_jhwi'].astype(int)
+
+        jhwi = jhwi.merge(coordinates, on='id', how='left')
+
+        # Add known coordinates to latitude and longitude
+        jhwi.loc[ pd.isnull(jhwi['longitude']), 'longitude'] = jhwi['long_x']
+        jhwi.loc[ pd.isnull(jhwi['latitude']), 'latitude'] = jhwi['lat_y']
+
+        jhwi = jhwi[['id_jhwi',
+                     'cert',
+                     'long_x',
+                     'lat_y',
+                     'validity',
+                     'city_name_x',
+                     'alpha',
+                     'alpha_sd_white',
+                     'alpha_sd_homo',
+                     'longitude',
+                     'longitude_sd_white',
+                     'longitude_sd_homo',
+                     'latitude',
+                     'latitude_sd_white',
+                     'latitude_sd_homo',
+                     'size',
+                     'size_sd_white',
+                     'size_sd_homo']]
+
+        # Rename
+        jhwi = jhwi.rename({'id_jhwi': 'id',
+                            'city_name_x': 'name',
+                            'longitude': 'varphi_est',
+                            'latitude': 'lambda_est',
+                            'size': 'T_one_over_vartheta'}, axis = 1)
+
+        dic = {'white': 'homo', 'homo': 'white'}
+        for se in dic.keys():
+            result_jhwi = jhwi.drop(['alpha_sd_' + dic[se],
+                                     'longitude_sd_' + dic[se],
+                                     'latitude_sd_' + dic[se],
+                                     'size_sd_' + dic[se]], axis = 1)
+            result_jhwi = result_jhwi.rename({
+                'alpha_sd_' + se: 'alpha_se',
+                'longitude_sd_' + se: 'varphi_se',
+                'latitude_sd_' + se: 'lambda_se',
+                'size_sd_' + se: 'T_one_over_vartheta_se'}, axis = 1)
+
+            print(result_jhwi)
+            result_jhwi.insert(12, 'sigma_est_se', np.nan)
+            result_jhwi['sigma_est_se'].iloc[0] = zeta['zeta'].iloc[0]/2
+            result_jhwi['sigma_est_se'].iloc[1] = zeta['zeta_sd_'+se].iloc[0]/2
+            result_jhwi = result_jhwi.fillna(0)
+
+            result_jhwi.to_csv(loc + 'report_table_' + se + 'se.csv',
+                               index=False)
 
 
 
@@ -987,7 +1095,7 @@ class EstimateAncient(EstimateBase):
         self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
 
         # Save trade shares (to speed up self.get_errors)
-        self.df_shares = self.df_iticount['s_ij'].values
+        self.shares = self.df_iticount['s_ij'].values
 
 
     def replace_id_coord(self, constr, drop_wahsusana=False, no_constr=False):
@@ -1363,7 +1471,7 @@ class EstimateAncientNoQattara(EstimateAncient):
         self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
 
         # Save trade shares (to speed up self.get_errors)
-        self.df_shares = self.df_iticount['s_ij'].values
+        self.shares = self.df_iticount['s_ij'].values
 
 
     def solve(self,
@@ -1484,11 +1592,23 @@ class EstimateAncientMLE(EstimateAncient):
         def increments_autograd(v):
             return self.log_L_increments(v)
         self.jac_increments = jacobian(increments_autograd)
+        self.hess_increments2 = hessian(increments_autograd)
+
+        def hess(v):
+            return self.jac_increments(v)
+        self.hess_increments = jacobian(hess)
+
 
         ## Using all vars
         def increments_autograd_full_vars(v):
             return self.log_L_increments(v, full_vars=True)
         self.jac_increments_full_vars = jacobian(increments_autograd_full_vars)
+
+        def hess_full_vars(v):
+            return self.jac_increments_full_vars(v)
+        self.hess_increments_full_vars = jacobian(hess_full_vars)
+
+
 
 
     def log_L_increments(self, varlist, full_vars=False):
@@ -1527,7 +1647,7 @@ class EstimateAncientMLE(EstimateAncient):
         # Scale shares
         #s_ij_model = 1.0e+50 * s_ij_model
 
-        return self.df_shares * np.log(s_ij_model)
+        return self.shares * np.log(s_ij_model)
 
 
     def mle_objective(self, varlist, full_vars=False):
@@ -1854,7 +1974,7 @@ class EstimateModernProof(EstimateBase):
         self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
 
         # Save trade shares (to speed up self.get_errors)
-        self.df_shares = self.df_iticount['s_ij'].values
+        self.shares = self.df_iticount['s_ij'].values
 
 
     def get_bounds(self, full_vars=False):
@@ -2065,7 +2185,7 @@ class EstimateModern(EstimateBase):
         self.div_indices = {'a_s': 1, 'a_e': 1 + self.num_cities}
 
         # Save trade shares (to speed up self.get_errors)
-        self.df_shares = self.df_iticount['s_ij'].values
+        self.shares = self.df_iticount['s_ij'].values
 
         # Save index (in varlist) of city that must be normalized to 100.
         self.id_normalized = {'all': 38, 'ancient_system': 12, 'matched': 7}
@@ -2101,7 +2221,7 @@ class EstimateModern(EstimateBase):
                                      alpha,
                                      self.df_iticount['dist'].values
                                     )
-        return self.df_shares - s_ij_model
+        return self.shares - s_ij_model
 
 
     def get_bounds(self, set_elasticity=None):
