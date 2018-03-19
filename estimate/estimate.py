@@ -134,6 +134,7 @@ class Loader(object):
 
 
 
+
 class EstimateBase(object):
     """ Base Class for main estimation procedures.
 
@@ -543,25 +544,18 @@ class EstimateBase(object):
         if zeta_fixed:
             jac = np.delete(jac, 0, axis=1)
 
-        scale = 1.0
-
-        bread = np.linalg.inv(scale * np.dot( np.transpose(jac), jac ))
-
         errors = self.get_errors(varlist, full_vars)
 
         # Build variance-covariance matrix, according to var_type
+        scale = 1.0
+        bread = np.linalg.inv(scale * np.dot( np.transpose(jac), jac ))
         if var_type == 'gmm':
             ham = np.dot(np.transpose(jac), np.outer(scale*errors, scale*errors))
             ham = np.dot(ham, jac)
-            print(ham.shape)
-            #ham = np.linalg.multi_dot((np.transpose(jac),
-            #                           np.outer(errors, errors),
-            #                           jac))
-            print(np.linalg.multi_dot((bread, ham, bread)))
             return np.linalg.multi_dot((bread, ham, bread))
 
         elif var_type == 'white':
-            # Make column vector
+            # Make column vector to multiply row-wise
             errors = np.expand_dims(errors, 1)
             ham = np.dot(np.transpose(jac * errors), jac * errors)
             return np.linalg.multi_dot((bread, ham, bread))
@@ -1607,8 +1601,6 @@ class EstimateAncientMLE(EstimateAncient):
         def hess_full_vars(v):
             return self.jac_increments_full_vars(v)
         self.hess_increments_full_vars = jacobian(hess_full_vars)
-
-
 
 
     def log_L_increments(self, varlist, full_vars=False):
