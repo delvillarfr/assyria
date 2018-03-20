@@ -550,18 +550,22 @@ class EstimateBase(object):
         scale = 1.0
         bread = np.linalg.inv(scale * np.dot( np.transpose(jac), jac ))
         if var_type == 'gmm':
-            ham = np.dot(np.transpose(jac), np.outer(scale*errors, scale*errors))
-            ham = np.dot(ham, jac)
+            #middle = np.matmul(scale*np.expand_dims(errors, 1),
+            #                   scale*np.expand_dims(errors, 0))
+            middle = np.outer(scale*errors, scale*errors)
+            ham = np.linalg.multi_dot((np.transpose(jac), middle, jac))
             return np.linalg.multi_dot((bread, ham, bread))
 
         elif var_type == 'white':
-            # Make column vector to multiply row-wise
-            errors = np.expand_dims(errors, 1)
-            ham = np.dot(np.transpose(jac * errors), jac * errors)
+            middle = np.diag((scale*errors)**2)
+            ham = np.linalg.multi_dot((np.transpose(jac), middle, jac))
+            ## Make column vector to multiply row-wise
+            #errors = np.expand_dims(errors, 1)
+            #ham = np.dot(np.transpose(jac * errors), jac * errors)
             return np.linalg.multi_dot((bread, ham, bread))
 
         elif var_type == 'homo':
-            return (np.sum(errors**2) / len(errors)) * bread
+            return scale * (np.sum(errors**2) / len(errors)) * bread
 
         else:
             raise ValueError("Please specify the variance type to be one of "
@@ -2585,6 +2589,7 @@ class EstimateModern(EstimateBase):
                                           'size_sd_homo']
                              )
         cities.to_csv('./estim_results/modern/'+self.source+'/cities.csv', index=False)
+
 
 
 
