@@ -1755,7 +1755,8 @@ class EstimateAncientMLE(EstimateAncient):
                      varlist,
                      var_type='white',
                      zeta_fixed=False,
-                     full_vars=False):
+                     full_vars=False,
+                     numerical=False):
         """ Compute the variance-covariance matrix of the estimators.
 
         This overwrites the analogous function in EstimateBase.
@@ -1763,21 +1764,32 @@ class EstimateAncientMLE(EstimateAncient):
         Args:
             var_type (str): One of 'white' or 'homo'. This argument is useless
                 and is provided only for compatibility.
+            numerical (bool): If True, use jacobian that is numerically
+                approximated. Otherwise, go for the exact jacobian. I assume
+                that full_vars == False if True.
 
         Returns:
             numpy.ndarray: The variance-covariance matrix of the estimators.
         """
         if full_vars:
+            if numerical:
+                print("--------------------------------------------------")
+                print("IT IS NUMERICAL")
+                print("--------------------------------------------------")
+                jac = self.numerical_jac(varlist, h=1.0e-05, full_vars=True)
+            else:
+                jac = self.jac_increments_full_vars(varlist)
             i = self.div_indices[True]
-            jac = self.jac_increments_full_vars(varlist)
             jac = pd.DataFrame(jac)
             jac = jac.drop(columns = ([1]
                            + range(i['long_s'], i['long_unknown_s'])
                            + range(i['lat_s'], i['lat_unknown_s'])))
             jac = jac.values
         else:
-            # Evaluate errors jacobian at estimated parameter.
-            jac = self.jac_increments(varlist)
+            if numerical:
+                jac = self.numerical_jac(varlist, h=1.0e-05)
+            else:
+                jac = self.jac_increments(varlist)
 
         # Remove fixed a
         index_norm = self.div_indices[False]['a_s'] + self.id_normalized
@@ -1845,6 +1857,58 @@ class EstimateAncientMLE(EstimateAncient):
             outer_prods[i] = np.outer(jac[i], jac[i])
 
         return np.linalg.inv(np.sum(outer_prods, axis = 0))
+
+
+    def numerical_grad(self, varlist, h):
+        """ Compute the numerical gradient for step size `h`.
+
+        Args:
+            h (float): The step size.
+
+        Returns:
+            numpy.ndarray: The gradient of ``self.mle_objective`` evaluated at
+                ``varlist`` for step size ``h``.
+        """
+        # Form inputs
+        H = h * np.eye(len(varlist))
+        v_plus = varlist + H
+        v_minus = varlist - H
+
+        # ``self.mle_objective`` must be evaluated one arg at a time... loop.
+        grads = np.empty(len(varlist))
+
+        for i in range(len(varlist)):
+            obj_plus = self.mle_objective(v_plus[i])
+            obj_minus = self.mle_objective(v_minus[i])
+            grads[i] = (obj_plus - obj_minus) / (2 * h)
+
+        return grads
+
+
+    def numerical_jac(self, varlist, h, full_vars = False):
+        """ Compute the numerical jacobian for step size `h`.
+
+        Args:
+            h (float): The step size.
+
+        Returns:
+            numpy.ndarray: The jacobian of ``self.log_L_increments`` evaluated
+                at ``varlist`` for step size ``h``.
+        """
+        # Form inputs
+        H = h * np.eye(len(varlist))
+        v_plus = varlist + H
+        v_minus = varlist - H
+
+        # ``self.mle_objective`` must be evaluated one arg at a time... loop.
+        jac = np.empty((len(self.shares), len(varlist)))
+
+        for col in range(len(varlist)):
+            obj_plus = self.log_L_increments(v_plus[col], full_vars)
+            obj_minus = self.log_L_increments(v_minus[col], full_vars)
+            jac[:, col] = (obj_plus - obj_minus) / (2 * h)
+
+        return jac
 
 
 
