@@ -1092,8 +1092,9 @@ class EstimateAncient(EstimateBase):
         i = np.repeat(np.arange(1, self.num_cities), self.num_cities)
         self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
 
-        # Save trade shares (to speed up self.get_errors)
+        # Save trade shares and trade counts (to speed up objective)
         self.shares = self.df_iticount['s_ij'].values
+        self.counts = self.df_iticount['N_ij'].values
 
 
     def replace_id_coord(self, constr, drop_wahsusana=False, no_constr=False):
@@ -1643,7 +1644,7 @@ class EstimateAncientMLE(EstimateAncient):
         # Scale shares
         #s_ij_model = 1.0e+50 * s_ij_model
 
-        return self.shares * np.log(s_ij_model)
+        return self.counts * np.log(s_ij_model)
 
 
     def mle_objective(self, varlist, full_vars=False):
