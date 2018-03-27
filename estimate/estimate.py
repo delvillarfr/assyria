@@ -1718,8 +1718,8 @@ class EstimateAncientMLE(EstimateAncient):
                          'limited_memory_max_history': 100,
                          'limited_memory_max_skipping': 1,
                          'mu_strategy': 'adaptive',
-                         'tol': 1e-8,
-                         'acceptable_tol': 1e-7,
+                         'tol': 1e-10,
+                         'acceptable_tol': 1e-10,
                          'acceptable_iter': 100,
                          'max_iter': max_iter}
         for option in option_specs.keys():
