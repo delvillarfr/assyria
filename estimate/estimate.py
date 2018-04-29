@@ -1207,6 +1207,31 @@ class EstimateAncient(EstimateBase):
         return (lb, ub)
 
 
+    def initial_cond_uniform(self, len_sim=None):
+        """ Gets uniform draws of initial condition(s) for `IPOPT`.
+
+        Returns:
+            numpy.ndarray: An array with `len_sim` perturbed initial
+                conditions.
+        """
+        # Specify lower and upper bounds for every variable (full_vars = False)
+        lower_bound = ( [0]
+                        + self.num_cities_unknown * [self.lng[0]]
+                        + self.num_cities_unknown * [self.lat[0]]
+                        + self.num_cities * [0]
+                      )
+        upper_bound =  ( [15]
+                        + self.num_cities_unknown * [self.lng[1]]
+                        + self.num_cities_unknown * [self.lat[1]]
+                        + self.num_cities * [200]
+                      )
+        n_params = 1 + 2*self.num_cities_unknown + self.num_cities
+
+        return np.random.uniform(lower_bound,
+                                 upper_bound,
+                                 size=(len_sim, n_params))
+
+
     def solve(self,
               x0,
               constraint_type = 'static',
