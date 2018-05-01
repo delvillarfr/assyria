@@ -1285,6 +1285,7 @@ class EstimateAncient(EstimateBase):
 
         # Add IPOPT options (some jhwi options were default)
         option_specs = { 'hessian_approximation': 'limited-memory',
+                         'print_frequency_iter': 5,
                          'linear_solver': solver,
                          'limited_memory_max_history': 100,
                          'limited_memory_max_skipping': 1,
