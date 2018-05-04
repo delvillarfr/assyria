@@ -52,7 +52,7 @@ class Loader(object):
             lost_cities (int): The number of lost cities.
 
         Returns:
-            (numpy.ndarray): The array of certs.
+            (np.ndarray): The array of certs.
         """
         certs = np.zeros(num_cities)
         lost_i = np.random.choice(num_cities,
@@ -67,7 +67,7 @@ class Loader(object):
         """ Reindex coordinates
 
         Args:
-            certs (numpy.ndarray): The array of location confidence. If
+            certs (np.ndarray): The array of location confidence. If
                 equal to 3, the corresponding is considered lost.
             coords (pandas.DataFrame): The dataframe of coordinates.
 
@@ -185,12 +185,12 @@ class EstimateBase(object):
         formula discussed in the paper.
 
         Args:
-            coord_i (numpy.ndarray): The first set of coordinates. It must have
+            coord_i (np.ndarray): The first set of coordinates. It must have
                 the latitude in column 0 and the longitude in column 1.
-            coord_j (numpy.ndarray): The second set of coordinates.
+            coord_j (np.ndarray): The second set of coordinates.
 
         Returns:
-            numpy.ndarray: The one-dimensional array of distances.
+            np.ndarray: The one-dimensional array of distances.
         """
         factor_out = 10000.0/90
         factor_in = np.cos(37.9 * np.pi / 180)
@@ -215,11 +215,11 @@ class EstimateBase(object):
         have been pre-specified in `__init__`.
 
         Args:
-            arr (numpy.ndarray): A 1-dim array that should be of length
+            arr (np.ndarray): A 1-dim array that should be of length
                 `self.num_cities`.
 
         Returns:
-            numpy.ndarray: an array repeating `arr` the number of times given
+            np.ndarray: an array repeating `arr` the number of times given
             by `self.num_cities`, but extracting value in index j on
             repetition j.
 
@@ -232,6 +232,33 @@ class EstimateBase(object):
         return arr_tiled[self.index_nodiag]
 
 
+    def coord_combinations(self, lat, lng):
+        """ Form all different coordinate combinations.
+
+        Args:
+            lat (np.ndarray or list): A 1-dimensional array of longitudes.
+            lng (np.ndarray or list): A 1-dimensional array of latitudes.
+
+        Returns:
+            tuple: Two arrays with latitudes and longitudes. Row `i` of each
+            array is a pair of different coordinates. If there are `n`
+            different coordinates, each array has `n(n-1)` rows.
+        """
+        n_coords = len(lat)
+        assert n_coords == len(lng)
+
+        coord_j = np.column_stack((
+            np.repeat(lat, n_coords - 1),
+            np.repeat(lng, n_coords - 1)
+        ))
+        coord_i = np.column_stack((
+            self.tile_nodiag(lat),
+            self.tile_nodiag(lng)
+        ))
+
+        return (coord_i, coord_j)
+
+
     def get_coordinate_pairs(self, lat_guess, lng_guess, full_vars=False):
         """ Forms coordinates of all pairs of different locations.
 
@@ -242,8 +269,8 @@ class EstimateBase(object):
         * `self.df_coordinates` is sorted according to `id_jhwi`.
 
         Args:
-            lat_guess (numpy.ndarray): The 1-dimensional array of latitudes.
-            lng_guess (numpy.ndarray): The 1-dimensional array of longitudes.
+            lat_guess (np.ndarray): The 1-dimensional array of latitudes.
+            lng_guess (np.ndarray): The 1-dimensional array of longitudes.
             full_vars (bool): If True, the known city coordinates are assumed
                 to be included.
         """
@@ -254,17 +281,42 @@ class EstimateBase(object):
             lats = np.concatenate((self.df_known['lat_y'].values, lat_guess))
             longs = np.concatenate((self.df_known['long_x'].values, lng_guess))
 
-        coord_j = np.column_stack((
-            np.repeat(lats, self.num_cities-1),
-            np.repeat(longs, self.num_cities-1)
-        ))
-        #assert len(lats) == len(longs)
-        coord_i = np.column_stack((
-            self.tile_nodiag(lats),
-            self.tile_nodiag(longs)
-        ))
+        return self.coord_combinations(lats, longs)
 
-        return (coord_i, coord_j)
+
+    #def get_coordinate_pairs(self, lat_guess, lng_guess, full_vars=False):
+    #    """ Forms coordinates of all pairs of different locations.
+
+    #    This function leverages that
+
+    #    * `self.df_iticount` is sorted according to `id_jhwi_j` first and then
+    #        by `id_jhwi_i`.
+    #    * `self.df_coordinates` is sorted according to `id_jhwi`.
+
+    #    Args:
+    #        lat_guess (np.ndarray): The 1-dimensional array of latitudes.
+    #        lng_guess (np.ndarray): The 1-dimensional array of longitudes.
+    #        full_vars (bool): If True, the known city coordinates are assumed
+    #            to be included.
+    #    """
+    #    if full_vars:
+    #        lats = lat_guess
+    #        longs = lng_guess
+    #    else:
+    #        lats = np.concatenate((self.df_known['lat_y'].values, lat_guess))
+    #        longs = np.concatenate((self.df_known['long_x'].values, lng_guess))
+
+    #    coord_j = np.column_stack((
+    #        np.repeat(lats, self.num_cities-1),
+    #        np.repeat(longs, self.num_cities-1)
+    #    ))
+    #    #assert len(lats) == len(longs)
+    #    coord_i = np.column_stack((
+    #        self.tile_nodiag(lats),
+    #        self.tile_nodiag(longs)
+    #    ))
+
+    #    return (coord_i, coord_j)
 
 
     def fetch_dist(self, lat_guess, lng_guess, full_vars=False):
@@ -286,12 +338,12 @@ class EstimateBase(object):
 
         Args:
             zeta (float): The distance elasticity of trade.
-            alpha (numpy.ndarray): City-specific alphas.
-            distances (numpy.ndarray): Contains distances between all j, i
+            alpha (np.ndarray): City-specific alphas.
+            distances (np.ndarray): Contains distances between all j, i
                 pairs of cities, excluding j, j pairs.
 
         Returns:
-            numpy.ndarray: The model-predicted trade shares.
+            np.ndarray: The model-predicted trade shares.
         """
         a = self.tile_nodiag(alpha)
         elems = a * (distances ** (-zeta))
@@ -307,11 +359,11 @@ class EstimateBase(object):
         """ Get the model and data trade share differences.
 
         Args:
-            varlist (numpy.ndarray):it is composed of
+            varlist (np.ndarray):it is composed of
                 `[zeta, lng_guess, lat_guess, alpha]`.
 
         Returns:
-            numpy.ndarray: the difference between data and model trade shares.
+            np.ndarray: the difference between data and model trade shares.
         """
         # Unpack arguments
         zeta = varlist[0]
@@ -353,7 +405,7 @@ class EstimateBase(object):
         and Trivedi (2005), p. 156.
 
         Args:
-            omega_inv (numpy.ndarray): The weighting matrix in the quadratic
+            omega_inv (np.ndarray): The weighting matrix in the quadratic
                 form.
 
         Returns:
@@ -369,7 +421,7 @@ class EstimateBase(object):
         """ Get the indices of elements of short `varlist` from full `varlist`.
 
         Returns:
-            numpy.ndarray: the indices to select short varlist from full
+            np.ndarray: the indices to select short varlist from full
                 varlist
         """
         i = self.div_indices[True]
@@ -391,10 +443,10 @@ class EstimateBase(object):
         = (zeta, useless, lng_known, lng_unknown, lat_known, lat_unknown, alpha)
 
         Args:
-            short (numpy.ndarray): The varlist in short format.
+            short (np.ndarray): The varlist in short format.
 
         Returns:
-            numpy.ndarray: The varlist in Jhwi format.
+            np.ndarray: The varlist in Jhwi format.
 
         Warning:
             zeta is not transformed into sigma (= 2 zeta)
@@ -435,11 +487,11 @@ class EstimateBase(object):
                 multiplied by a scalar. If `'flexible'` then each element of
                 the initial value vector is multiplied by a different scalar.
                 Default is `'rigid'`.
-            suggestion (numpy.ndarray): A custom initial value. It must be
+            suggestion (np.ndarray): A custom initial value. It must be
                 coherent with `full_vars`.
 
         Returns:
-            numpy.ndarray: The default initial condition if perturb is not
+            np.ndarray: The default initial condition if perturb is not
                 specified, and an array with `len_sim` perturbed initial
                 conditions.
         """
@@ -522,7 +574,7 @@ class EstimateBase(object):
             var_type (str): One of 'white' or 'homo', or 'gmm'.
 
         Returns:
-            numpy.ndarray: The variance-covariance matrix of the estimators.
+            np.ndarray: The variance-covariance matrix of the estimators.
         """
         if full_vars:
             i = self.div_indices[True]
@@ -584,13 +636,13 @@ class EstimateBase(object):
         `self.get_variance`.
 
         Args:
-            varlist (numpy.ndarray): The mean. It should be the estimated
+            varlist (np.ndarray): The mean. It should be the estimated
                 vector of parameters.
             size (int): The number of draws from the normal distribution to
                 get.
 
         Returns:
-            numpy.ndarray
+            np.ndarray
         """
         cov = self.get_variance(varlist,
                                 var_type=var_type,
@@ -632,7 +684,7 @@ class EstimateBase(object):
             theta (float): The trade elasticity parameter that is assumed away.
 
         Returns:
-            numpy.ndarray: The fundamental size of cities
+            np.ndarray: The fundamental size of cities
         """
         # Unpack arguments
         zeta = varlist[0]
@@ -668,7 +720,7 @@ class EstimateBase(object):
         size estimates.
 
         Returns:
-            numpy.ndarray: The variance-covariance matrix of city sizes.
+            np.ndarray: The variance-covariance matrix of city sizes.
         """
         def size_for_grad(v):
             """ get_size function for autograd """
@@ -711,7 +763,7 @@ class EstimateBase(object):
         Exports zeta.csv, coordinates.csv, cities.csv, simulation.csv
 
         Args:
-            varlist (numpy.ndarray): it is in jhwi format:
+            varlist (np.ndarray): it is in jhwi format:
         `(zeta, useless, long_known, long_unknown, lat_known, lat_unknown, a)`
             loc (str): the directory to save results.
         """
@@ -956,9 +1008,9 @@ class EstimateAncient(EstimateBase):
         lat (tuple): Contains assumed lower and upper latitude bounds.
         lng (tuple): Contains assumed lower and upper longitude bounds.
         rand_lost_cities (int): Optional. The number of random cities to lose.
-        lng_estimated (numpy.ndarray): The estimated longitudes of lost cities
+        lng_estimated (np.ndarray): The estimated longitudes of lost cities
             in original exercise.
-        lat_estimated (numpy.ndarray): The estimated latitudes of lost cities
+        lat_estimated (np.ndarray): The estimated latitudes of lost cities
             in original exercise.
     """
 
@@ -1211,7 +1263,7 @@ class EstimateAncient(EstimateBase):
         """ Gets uniform draws of initial condition(s) for `IPOPT`.
 
         Returns:
-            numpy.ndarray: An array with `len_sim` perturbed initial
+            np.ndarray: An array with `len_sim` perturbed initial
                 conditions.
         """
         # Specify lower and upper bounds for every variable (full_vars = False)
@@ -1337,7 +1389,7 @@ class EstimateAncient(EstimateBase):
         This function is the one called when running estimation in parallel.
 
         Args:
-            x0 (numpy.ndarray): The array of initial conditions. Each row is an
+            x0 (np.ndarray): The array of initial conditions. Each row is an
                 initial condition.
             rank (int): Process number in parallelized computing.
 
@@ -1375,7 +1427,7 @@ class EstimateAncient(EstimateBase):
 
         Args:
             bounds (tuple): the output of `self.get_bounds`.
-            arg (numpy.ndarray): the argument in short format (as appears in
+            arg (np.ndarray): the argument in short format (as appears in
                 IPOPT output).
 
         Returns:
@@ -1638,11 +1690,11 @@ class EstimateAncientMLE(EstimateAncient):
         """ Get the log likelihood increments.
 
         Args:
-            varlist (numpy.ndarray): it is composed of
+            varlist (np.ndarray): it is composed of
                 `[zeta, lng_guess, lat_guess, alpha]`.
 
         Returns:
-            numpy.ndarray: the one-dimensional array of log likelihood
+            np.ndarray: the one-dimensional array of log likelihood
             increments.
         """
         # Unpack arguments
@@ -1796,7 +1848,7 @@ class EstimateAncientMLE(EstimateAncient):
                 that full_vars == False if True.
 
         Returns:
-            numpy.ndarray: The variance-covariance matrix of the estimators.
+            np.ndarray: The variance-covariance matrix of the estimators.
         """
         if full_vars:
             if numerical:
@@ -1857,7 +1909,7 @@ class EstimateAncientMLE(EstimateAncient):
                 and is provided only for compatibility.
 
         Returns:
-            numpy.ndarray: The variance-covariance matrix of the estimators.
+            np.ndarray: The variance-covariance matrix of the estimators.
         """
         if full_vars:
             i = self.div_indices[True]
@@ -1893,7 +1945,7 @@ class EstimateAncientMLE(EstimateAncient):
             h (float): The step size.
 
         Returns:
-            numpy.ndarray: The gradient of ``self.mle_objective`` evaluated at
+            np.ndarray: The gradient of ``self.mle_objective`` evaluated at
                 ``varlist`` for step size ``h``.
         """
         # Form inputs
@@ -1919,7 +1971,7 @@ class EstimateAncientMLE(EstimateAncient):
             h (float): The step size.
 
         Returns:
-            numpy.ndarray: The jacobian of ``self.log_L_increments`` evaluated
+            np.ndarray: The jacobian of ``self.log_L_increments`` evaluated
                 at ``varlist`` for step size ``h``.
         """
         # Form inputs
@@ -1961,9 +2013,9 @@ class EstimateModernProof(EstimateBase):
         lat (tuple): Contains assumed lower and upper latitude bounds.
         lng (tuple): Contains assumed lower and upper longitude bounds.
         rand_lost_cities (int): Optional. The number of random cities to lose.
-        lng_estimated (numpy.ndarray): The estimated longitudes of lost cities
+        lng_estimated (np.ndarray): The estimated longitudes of lost cities
             in original exercise.
-        lat_estimated (numpy.ndarray): The estimated latitudes of lost cities
+        lat_estimated (np.ndarray): The estimated latitudes of lost cities
             in original exercise.
     """
 
@@ -2198,7 +2250,7 @@ class EstimateModernProof(EstimateBase):
         This function is the one called when running estimation in parallel.
 
         Args:
-            x0 (numpy.ndarray): The array of initial conditions. Each row is an
+            x0 (np.ndarray): The array of initial conditions. Each row is an
                 initial condition.
             rank (int): Process number in parallelized computing.
 
@@ -2290,11 +2342,11 @@ class EstimateModern(EstimateBase):
         """ Get the model and data trade share differences.
 
         Args:
-            varlist (numpy.ndarray):it is composed of
+            varlist (np.ndarray):it is composed of
                 `[zeta, alpha]`.
 
         Returns:
-            numpy.ndarray: the difference between data and model trade shares.
+            np.ndarray: the difference between data and model trade shares.
         """
         # Unpack arguments
         zeta = varlist[0]
@@ -2355,7 +2407,7 @@ class EstimateModern(EstimateBase):
                 Default is `'rigid'`.
 
         Returns:
-            numpy.ndarray: The default initial condition if perturb is not
+            np.ndarray: The default initial condition if perturb is not
                 specified, and an array with `len_sim` perturbed initial
                 conditions.
         """
@@ -2462,7 +2514,7 @@ class EstimateModern(EstimateBase):
         This function is the one called when running estimation in parallel.
 
         Args:
-            x0 (numpy.ndarray): The array of initial conditions. Each row is an
+            x0 (np.ndarray): The array of initial conditions. Each row is an
                 initial condition.
             rank (int): Process number in parallelized computing.
 
@@ -2525,7 +2577,7 @@ class EstimateModern(EstimateBase):
             var_type (str): One of 'white' or 'homo'.
 
         Returns:
-            numpy.ndarray: The variance-covariance matrix of the estimators.
+            np.ndarray: The variance-covariance matrix of the estimators.
         """
         errors = self.get_errors(varlist)
 
@@ -2562,7 +2614,7 @@ class EstimateModern(EstimateBase):
             theta (float): The trade elasticity parameter that is assumed away.
 
         Returns:
-            numpy.ndarray: The fundamental size of cities
+            np.ndarray: The fundamental size of cities
         """
         # Unpack arguments
         zeta = varlist[0]
@@ -2593,7 +2645,7 @@ class EstimateModern(EstimateBase):
         size estimates.
 
         Returns:
-            numpy.ndarray: The variance-covariance matrix of city sizes.
+            np.ndarray: The variance-covariance matrix of city sizes.
         """
         def size_for_grad(v):
             """ get_size function for autograd """
@@ -2618,7 +2670,7 @@ class EstimateModern(EstimateBase):
         Exports zeta.csv, coordinates.csv, cities.csv, simulation.csv
 
         Args:
-            varlist (numpy.ndarray): it is in jhwi format: `(zeta, a)`
+            varlist (np.ndarray): it is in jhwi format: `(zeta, a)`
         """
         # 1. Fetch standard error of estimates
         varlist_cov_white = self.get_variance(varlist,
