@@ -206,7 +206,7 @@ class EstimateBase(object):
         return factor_out * np.sqrt( np.sum(diff**2, axis=1) )
 
 
-    def tile_nodiag(self, arr):
+    def tile_nodiag(self, arr, default):
         """ Tile a 1-dimensional array avoiding entry i in repetition i.
 
         The array is tiled `self.num_cities` times.
@@ -216,7 +216,10 @@ class EstimateBase(object):
 
         Args:
             arr (np.ndarray): A 1-dim array that should be of length
-                `self.num_cities`.
+                `self.num_cities` if default == True.
+            default (bool): It is either True of False. If True,
+                ``self.index_nodiag`` is used for speed. If false, this
+                fancy index is computed on the spot.
 
         Returns:
             np.ndarray: an array repeating `arr` the number of times given
@@ -227,12 +230,20 @@ class EstimateBase(object):
             >>> self.tile_nodiag(arr)
             array([2, 3, 1, 3, 1, 2])
         """
-        arr_tiled = np.tile(arr, self.num_cities)
+        if default:
+            n_cities = self.num_cities
+            fancy_i = self.index_nodiag
+        else:
+            n_cities = len(arr)
+            # The fancy index selects off-diagonal elements.
+            i = np.repeat(np.arange(1, n_cities), n_cities)
+            fancy_i = i + np.arange(n_cities*(n_cities - 1))
 
-        return arr_tiled[self.index_nodiag]
+        arr_tiled = np.tile(arr, n_cities)
+        return arr_tiled[fancy_i]
 
 
-    def coord_combinations(self, lat, lng):
+    def coord_combinations(self, lat, lng, default):
         """ Form all different coordinate combinations.
 
         Args:
@@ -252,8 +263,8 @@ class EstimateBase(object):
             np.repeat(lng, n_coords - 1)
         ))
         coord_i = np.column_stack((
-            self.tile_nodiag(lat),
-            self.tile_nodiag(lng)
+            self.tile_nodiag(lat, default),
+            self.tile_nodiag(lng, default)
         ))
 
         return (coord_i, coord_j)
@@ -281,42 +292,7 @@ class EstimateBase(object):
             lats = np.concatenate((self.df_known['lat_y'].values, lat_guess))
             longs = np.concatenate((self.df_known['long_x'].values, lng_guess))
 
-        return self.coord_combinations(lats, longs)
-
-
-    #def get_coordinate_pairs(self, lat_guess, lng_guess, full_vars=False):
-    #    """ Forms coordinates of all pairs of different locations.
-
-    #    This function leverages that
-
-    #    * `self.df_iticount` is sorted according to `id_jhwi_j` first and then
-    #        by `id_jhwi_i`.
-    #    * `self.df_coordinates` is sorted according to `id_jhwi`.
-
-    #    Args:
-    #        lat_guess (np.ndarray): The 1-dimensional array of latitudes.
-    #        lng_guess (np.ndarray): The 1-dimensional array of longitudes.
-    #        full_vars (bool): If True, the known city coordinates are assumed
-    #            to be included.
-    #    """
-    #    if full_vars:
-    #        lats = lat_guess
-    #        longs = lng_guess
-    #    else:
-    #        lats = np.concatenate((self.df_known['lat_y'].values, lat_guess))
-    #        longs = np.concatenate((self.df_known['long_x'].values, lng_guess))
-
-    #    coord_j = np.column_stack((
-    #        np.repeat(lats, self.num_cities-1),
-    #        np.repeat(longs, self.num_cities-1)
-    #    ))
-    #    #assert len(lats) == len(longs)
-    #    coord_i = np.column_stack((
-    #        self.tile_nodiag(lats),
-    #        self.tile_nodiag(longs)
-    #    ))
-
-    #    return (coord_i, coord_j)
+        return self.coord_combinations(lats, longs, default = True)
 
 
     def fetch_dist(self, lat_guess, lng_guess, full_vars=False):
@@ -345,7 +321,7 @@ class EstimateBase(object):
         Returns:
             np.ndarray: The model-predicted trade shares.
         """
-        a = self.tile_nodiag(alpha)
+        a = self.tile_nodiag(alpha, default = True)
         elems = a * (distances ** (-zeta))
 
         denom = np.reshape(elems, (self.num_cities, self.num_cities - 1))
@@ -699,7 +675,7 @@ class EstimateBase(object):
 
         ## Build summation
         # This part draws from self.s_ij_model()
-        a = self.tile_nodiag(alpha)
+        a = self.tile_nodiag(alpha, default = True)
         elems = a * (distances ** (-zeta))
         elems = np.reshape(elems, (self.num_cities, self.num_cities - 1))
         # Add within-city component. Assumed within-city distance: 30 km.
@@ -810,6 +786,7 @@ class EstimateBase(object):
 
         ## Add 0 sd for zeta if zeta is fixed
         if zeta_fixed:
+            print('ENTERED')
             varlist_sd_gmm = np.concatenate(([0.0], varlist_sd_gmm))
             varlist_sd_white = np.concatenate(([0.0], varlist_sd_white))
             varlist_sd_homo = np.concatenate(([0.0], varlist_sd_homo))
@@ -1088,6 +1065,9 @@ class EstimateAncient(EstimateBase):
                     self.df_coordinates.loc[self.df_coordinates['id'] == 'ka01',
                                             'id_jhwi'].values[0]
                     ) - 1
+
+        # Set Mamma to be a known city
+        self.df_coordinates.loc[self.df_coordinates['id'] == 'ma02', 'cert'] = 2
 
         # Known cities
         self.df_known = self.df_coordinates.loc[
@@ -2627,7 +2607,7 @@ class EstimateModern(EstimateBase):
 
         ## Build summation
         # This part draws from self.s_ij_model()
-        a = self.tile_nodiag(alpha)
+        a = self.tile_nodiag(alpha, default = True)
         elems = a * (distances ** (-zeta))
         elems = np.reshape(elems, (self.num_cities, self.num_cities - 1))
         # Add within-city component. Assumed within-city distance: 30 km.
