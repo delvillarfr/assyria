@@ -133,6 +133,107 @@ class Loader(object):
         return constraint.sort_values('id_shuff')
 
 
+class LoaderNew(object):
+    """ Class to load datasets for given lost and known cities.
+
+    It provides methods to get the iticount, coordinates and constraints
+    datasets with a chosen set of known and lost cities.
+    """
+
+    def __init__(self):
+        pass
+
+
+    def random_certs(self, n_cities, lost_cities):
+        """ Generate random cert with fixed number of lost cities.
+
+        Args:
+            n_cities (int): The total number of cities.
+            lost_cities (int): The number of lost cities.
+
+        Returns:
+            (np.ndarray): The array of certs. If an entry is equal to 3, the
+            corresponding city is lost. Otherwise, it is known.
+        """
+        certs = np.zeros(n_cities)
+        lost_i = np.random.choice(n_cities,
+                                  size = lost_cities,
+                                  replace = False)
+        certs[lost_i] = 3
+
+        return certs
+
+
+    def reindex_coordinates(self, certs, coords):
+        """ Reindex coordinates
+
+        Args:
+            certs (np.ndarray): The one-dimensional array of location
+                confidence. If equal to 3, the corresponding city is
+                considered lost.
+            coords (pandas.DataFrame): The dataframe of coordinates.
+
+        Returns:
+            pandas.DataFrame: The sorted dataframe of coordinates with
+                new cert. It is sorted by cert and then by id.
+        """
+        coords['cert'] = certs
+        coords = coords.sort_values(['cert', 'id'])
+        coords['id_shuff'] = range(len(coords))
+
+        return coords
+
+
+    def reindex_iticount(self, iticount, coords):
+        """ Reindex and re-sort iticount data.
+
+        The sorting is based on the new id_shuff, first on j, then on i.
+
+        Args:
+            iticount (pandas.DataFrame): The iticount data.
+                notation (str): The convention for column names in iticount.
+                It can be either 'fdv' or 'jhwi'.
+
+        Returns:
+            pandas.DataFrame: The reindexed, resorted iticount data.
+        """
+        # Keep only relevant vars
+        c = coords[['id', 'id_shuff']]
+
+        for i in ['id_i', 'id_j']:
+            iticount = pd.merge(iticount,
+                                c,
+                                how = 'left',
+                                left_on = i,
+                                right_on = 'id')
+        iticount = iticount.rename(index = str,
+                                   columns = {'id_shuff_x': 'id_shuff_i',
+                                              'id_shuff_y': 'id_shuff_j'})
+
+        return iticount.sort_values(['id_shuff_j', 'id_shuff_i'])
+
+
+    def reindex_constr(self, constraint, coords):
+        """ Reindex and re-sort constraints data.
+
+        Args:
+            constraint (pandas.DataFrame): The constraints data.
+
+        Returns:
+            pandas.DataFrame: The reindexed constraints data without known
+                cities.
+        """
+        # Keep only relevant vars
+        c = coords[['id', 'id_shuff', 'cert']]
+        constraint = pd.merge(constraint,
+                              c,
+                              how = 'left',
+                              on = 'id')
+        constraint = (constraint.loc[constraint['cert'] == 3]
+                                .sort_values('id_shuff'))
+        return constraint
+
+
 
 
 class EstimateBase(object):
@@ -1039,35 +1140,38 @@ class EstimateAncient(EstimateBase):
             self.df_coordinates[v] = np.rad2deg(self.df_coordinates[v].values,
                                                 dtype='float64')
 
+        # Set Mamma to be a known city
+        self.df_coordinates.loc[self.df_coordinates['id'] == 'ma02', 'cert'] = 2
+
+        # Reindex datasets
         if rand_lost_cities is not None:
             lost_i = self.df_coordinates['cert'] == 3
             self.df_coordinates.loc[lost_i, 'long_x'] = lng_estimated
             self.df_coordinates.loc[lost_i, 'lat_y'] = lat_estimated
-
-            load = Loader()
-
-            rand_certs = load.random_certs(self.num_cities, rand_lost_cities)
-            self.df_coordinates = load.reindex_coordinates(rand_certs,
-                                                           self.df_coordinates)
-            self.df_iticount = load.reindex_iticount(self.df_iticount,
-                                                     self.df_coordinates)
-            self.df_constr_dyn = load.reindex_constr(self.df_constr_dyn,
-                                                     self.df_coordinates)
-            self.df_constr_stat = load.reindex_constr(self.df_constr_stat,
-                                                      self.df_coordinates)
-            # Save Kanes' position in cities
-            self.id_normalized = (
-                    self.df_coordinates.loc[self.df_coordinates['id'] == 'ka01',
-                                            'id_shuff'].values[0]
-                    )
+            certs = load.random_certs(self.num_cities, rand_lost_cities)
         else:
-            self.id_normalized = int(
-                    self.df_coordinates.loc[self.df_coordinates['id'] == 'ka01',
-                                            'id_jhwi'].values[0]
-                    ) - 1
+            certs = self.df_coordinates['cert']
 
-        # Set Mamma to be a known city
-        self.df_coordinates.loc[self.df_coordinates['id'] == 'ma02', 'cert'] = 2
+        load = LoaderNew()
+
+        self.df_coordinates = load.reindex_coordinates(certs,
+                                                       self.df_coordinates)
+        self.df_iticount = load.reindex_iticount(self.df_iticount,
+                                                 self.df_coordinates)
+        self.df_constr_dyn = load.reindex_constr(self.df_constr_dyn,
+                                                 self.df_coordinates)
+        self.df_constr_stat = load.reindex_constr(self.df_constr_stat,
+                                                  self.df_coordinates)
+        # Save Kanes' position in cities
+        self.id_normalized = (
+                self.df_coordinates.loc[self.df_coordinates['id'] == 'ka01',
+                                        'id_shuff'].values[0]
+                )
+        #else:
+        #    self.id_normalized = int(
+        #            self.df_coordinates.loc[self.df_coordinates['id'] == 'ka01',
+        #                                    'id_jhwi'].values[0]
+        #            ) - 1
 
         # Known cities
         self.df_known = self.df_coordinates.loc[
@@ -1213,6 +1317,7 @@ class EstimateAncient(EstimateBase):
 
         i = self.div_indices[full_vars]
         dit = {'long':('varphi', 'long_x'), 'lat': ('lambda', 'lat_y')}
+
         if full_vars:
             lb[1] = 0
             ub[1] = 0
@@ -1299,12 +1404,15 @@ class EstimateAncient(EstimateBase):
                              + "'static' or 'dynamic'")
         bounds = self.get_bounds(constr, full_vars, set_elasticity)
 
-        assert len(bounds[0]) == len(x0)
         #print('Low bound:')
         #print(bounds[0])
+        #print(len(bounds[0]))
         #print('High bound:')
         #print(bounds[1])
+        #print(len(bounds[1]))
         #print('max_iter:' + str(max_iter))
+        assert len(bounds[0]) == len(x0)
+        assert len(bounds[1]) == len(x0)
 
         nlp = ipopt.problem( n=len(x0),
                              m=0,
@@ -2032,8 +2140,8 @@ class EstimateModernProof(EstimateBase):
 
         # Loose cities
         load = Loader()
-        rand_certs = load.random_certs(self.num_cities, rand_lost_cities)
-        self.df_coordinates = load.reindex_coordinates(rand_certs,
+        certs = load.random_certs(self.num_cities, rand_lost_cities)
+        self.df_coordinates = load.reindex_coordinates(certs,
                                                        self.df_coordinates)
         self.df_iticount = load.reindex_iticount(self.df_iticount,
                                                  self.df_coordinates,
