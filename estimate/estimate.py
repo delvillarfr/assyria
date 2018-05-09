@@ -1104,6 +1104,7 @@ class EstimateAncient(EstimateBase):
         EstimateBase.__init__(self, build_type, omega = omega)
         self.lat = lat
         self.lng = lng
+        self.cities_to_drop = cities_to_drop
 
         ## Paths
         root = config.get('paths', 'root')
@@ -1135,7 +1136,7 @@ class EstimateAncient(EstimateBase):
 
 
         # Drop the cities that don't participate
-        for city in cities_to_drop:
+        for city in self.cities_to_drop:
             self.df_coordinates = self.df_coordinates.loc[
                     self.df_coordinates['id'] != city
                     ]
@@ -1167,8 +1168,9 @@ class EstimateAncient(EstimateBase):
             self.df_coordinates[v] = np.rad2deg(self.df_coordinates[v].values,
                                                 dtype='float64')
 
-        # Set Mamma to be a known city
-        self.df_coordinates.loc[self.df_coordinates['id'] == 'ma02', 'cert'] = 2
+        ## Set Mamma and Hahhum to be known cities
+        #for c in ['ma02', 'ha01']:
+        #    self.df_coordinates.loc[self.df_coordinates['id'] == c, 'cert'] = 2
 
         # Reindex datasets
         if rand_lost_cities is not None:
@@ -1445,6 +1447,7 @@ class EstimateAncient(EstimateBase):
                              m=0,
                              problem_obj=OptimizerAncient(build_type = self.build_type,
                                                           omega = self.omega,
+                                                          cities_to_drop = self.cities_to_drop,
                                                           full_vars = full_vars),
                              lb=bounds[0],
                              ub=bounds[1] )
@@ -2854,8 +2857,15 @@ class EstimateModern(EstimateBase):
 # Now define optimization problems for IPOPT
 class OptimizerAncient(EstimateAncient):
 
-    def __init__(self, build_type, omega = None, full_vars = False):
-        EstimateAncient.__init__(self, build_type, omega = omega)
+    def __init__(self,
+                 build_type,
+                 omega = None,
+                 cities_to_drop = [],
+                 full_vars = False):
+        EstimateAncient.__init__(self,
+                                 build_type,
+                                 omega = omega,
+                                 cities_to_drop = cities_to_drop)
         self.full_vars = full_vars
 
         # Set objective and gradient depending on whether we have an omega.
