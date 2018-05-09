@@ -1099,6 +1099,7 @@ class EstimateAncient(EstimateBase):
                  rand_lost_cities = None,
                  lng_estimated = None,
                  lat_estimated = None,
+                 cities_to_drop = [],
                  omega = None):
         EstimateBase.__init__(self, build_type, omega = omega)
         self.lat = lat
@@ -1131,6 +1132,32 @@ class EstimateAncient(EstimateBase):
         else:
             raise ValueError("Initialize class with 'directional' or "
                              + "'non_directional'")
+
+
+        # Drop the cities that don't participate
+        for city in cities_to_drop:
+            self.df_coordinates = self.df_coordinates.loc[
+                    self.df_coordinates['id'] != city
+                    ]
+            self.df_iticount = self.df_iticount.loc[
+                    (self.df_iticount['id_i'] != city)
+                    & (self.df_iticount['id_j'] != city)
+                    , ['cert_i', 'cert_j', 'id_i', 'id_j', 'N_ij']]
+            # Recompute trade shares
+            for status in ['i', 'j']:
+                N = (self.df_iticount.groupby('id_'+status)
+                                     .sum()['N_ij']
+                                     .rename('N_'+status)
+                    )
+
+                # Add this info
+                self.df_iticount = self.df_iticount.join(N, on='id_'+status)
+
+            # Add s_ij
+            self.df_iticount['s_ij'] = (
+                    self.df_iticount['N_ij'] / self.df_iticount['N_j']
+                    )
+
 
         # Save number of cities
         self.num_cities = len(self.df_coordinates)
