@@ -1106,6 +1106,7 @@ class EstimateAncient(EstimateBase):
         self.lat = lat
         self.lng = lng
         self.cities_to_drop = cities_to_drop
+        self.cities_to_known = cities_to_known
 
         ## Paths
         root = config.get('paths', 'root')
@@ -1450,6 +1451,7 @@ class EstimateAncient(EstimateBase):
                              m=0,
                              problem_obj=OptimizerAncient(build_type = self.build_type,
                                                           omega = self.omega,
+                                                          cities_to_known = self.cities_to_known,
                                                           cities_to_drop = self.cities_to_drop,
                                                           full_vars = full_vars),
                              lb=bounds[0],
@@ -2863,11 +2865,13 @@ class OptimizerAncient(EstimateAncient):
     def __init__(self,
                  build_type,
                  omega = None,
+                 cities_to_known = [],
                  cities_to_drop = [],
                  full_vars = False):
         EstimateAncient.__init__(self,
                                  build_type,
                                  omega = omega,
+                                 cities_to_known = cities_to_known,
                                  cities_to_drop = cities_to_drop)
         self.full_vars = full_vars
 
