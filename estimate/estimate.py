@@ -1100,6 +1100,7 @@ class EstimateAncient(EstimateBase):
                  lng_estimated = None,
                  lat_estimated = None,
                  cities_to_drop = [],
+                 cities_to_known = [],
                  omega = None):
         EstimateBase.__init__(self, build_type, omega = omega)
         self.lat = lat
@@ -1168,9 +1169,11 @@ class EstimateAncient(EstimateBase):
             self.df_coordinates[v] = np.rad2deg(self.df_coordinates[v].values,
                                                 dtype='float64')
 
-        ## Set Mamma and Hahhum to be known cities
-        #for c in ['ma02', 'ha01']:
-        #    self.df_coordinates.loc[self.df_coordinates['id'] == c, 'cert'] = 2
+        # Set additional known cities as known
+        for c in cities_to_known:
+            self.df_coordinates.loc[self.df_coordinates['id'] == c, 'cert'] = 2
+            self.df_iticount.loc[self.df_iticount['id_i'] == c, 'cert_i'] = 2
+            self.df_iticount.loc[self.df_iticount['id_j'] == c, 'cert_j'] = 2
 
         # Reindex datasets
         if rand_lost_cities is not None:
