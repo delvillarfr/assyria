@@ -1196,10 +1196,16 @@ class EstimateAncient(EstimateBase):
         self.df_constr_stat = load.reindex_constr(self.df_constr_stat,
                                                   self.df_coordinates)
         # Save Kanes' position in cities
-        self.id_normalized = (
-                self.df_coordinates.loc[self.df_coordinates['id'] == 'ka01',
-                                        'id_shuff'].values[0]
-                )
+        try:
+            self.id_normalized = (
+                    self.df_coordinates.loc[self.df_coordinates['id'] == 'ka01',
+                                            'id_shuff'].values[0]
+                    )
+        except IndexError:
+            self.id_normalized = (
+                    self.df_coordinates.loc[self.df_coordinates['id'] == 'ka02',
+                                            'id_shuff'].values[0]
+                    )
         #else:
         #    self.id_normalized = int(
         #            self.df_coordinates.loc[self.df_coordinates['id'] == 'ka01',
