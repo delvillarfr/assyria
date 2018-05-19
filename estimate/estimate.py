@@ -637,6 +637,45 @@ class EstimateBase(object):
         return np.linalg.multi_dot((bread_top, ham, bread_bottom))
 
 
+    def get_jacobian(self,
+                     varlist,
+                     var_type='white',
+                     zeta_fixed=False,
+                     full_vars=False):
+        """ Compute the variance-covariance matrix of the estimators.
+
+        It can be computed according to the White formula, or with
+        homoskedasticity.
+
+        Args:
+            var_type (str): One of 'white' or 'homo', or 'gmm'.
+
+        Returns:
+            np.ndarray: The variance-covariance matrix of the estimators.
+        """
+        if full_vars:
+            i = self.div_indices[True]
+            jac = self.jac_errors_full_vars(varlist)
+            jac = pd.DataFrame(jac)
+            jac = jac.drop(columns = ([1]
+                           + range(i['long_s'], i['long_unknown_s'])
+                           + range(i['lat_s'], i['lat_unknown_s'])))
+            jac = jac.values
+        else:
+            # Evaluate errors jacobian at estimated parameter.
+            jac = self.jac_errors(varlist)
+
+        # Remove fixed a
+        index_norm = self.div_indices[False]['a_s'] + self.id_normalized
+        jac = np.delete(jac, index_norm, axis=1)
+
+        # If zeta is fixed, remove it.
+        if zeta_fixed:
+            jac = np.delete(jac, 0, axis=1)
+
+        return jac
+
+
     def get_variance(self,
                      varlist,
                      var_type='white',
