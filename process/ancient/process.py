@@ -18,7 +18,7 @@ import sys
 config = ConfigParser.ConfigParser()
 
 ## file keys.ini should be in process.py parent directory.
-config.read(os.path.dirname(os.path.dirname(os.path.dirname(__file__))) + '/keys.ini')
+config.read('../../keys.ini')
 
 ## Paths
 root = config.get('paths', 'root')
@@ -41,11 +41,11 @@ process = config.get('paths', 'process_a')
 class Process(object):
     """ Parent class for directional and non-directional data generation """
 
-    def __init__(self, build_type): 
+    def __init__(self, build_type):
         '''
         build_type: str. One of "directional" or "non-directional".
 
-        Loads all raw datasets. 
+        Loads all raw datasets.
         Stores all filenames of datasets that can be produced.
         Saves the filtering and variable-building methods as attributes.
         '''
@@ -58,7 +58,7 @@ class Process(object):
         self.df_city_name = pd.read_csv(root + raw_city_name, header = None)
         self.df_city_name = self.df_city_name.rename(columns = {0: 'city_name'})
 
-        self.id_path = root + process + 'id.csv'        
+        self.id_path = root + process + 'id.csv'
 
         if build_type == 'directional':
             self.coordinates_path = root + process + 'coordinates_dir.csv'
@@ -89,7 +89,7 @@ class Process(object):
     def create_id(self, names):
         """
         names: pd.Series. A series of city names.
-        
+
         The id to use will be the first two letters of the city followed by
         their place in the list. e.g. Kanes is the first of two cities starting
         with "Ka". Its id is "ka01".
@@ -112,7 +112,7 @@ class Process(object):
 
         return names['id']
 
-    
+
     def fetch_df_id(self):
         """
         Genrates id's for our universe, which is assumed to be the cities in
@@ -127,50 +127,50 @@ class Process(object):
 
     def filter_positive_imports(self):
         """
-        Keeps rows in iticount data where importing (anccityid1) and exporting
-        (anccityid2) cities import at least once.
+        Keeps rows in iticount data where importing (id_city1) and exporting
+        (id_city2) cities import at least once.
 
         Returns 1-dim np.array with id's of participating cities.
         """
         # Get N_j
-        N_j = (self.df_iticount.groupby('anccityid2')
-                       .sum()['iticount']
+        N_j = (self.df_iticount.groupby('id_city2')
+                       .sum()['iti_joint']
                        .rename('N_j')
               )
 
         # Add this info keep obs with positive aggregate imports
-        iticount = self.df_iticount.join(N_j, on='anccityid2')
+        iticount = self.df_iticount.join(N_j, on='id_city2')
         iticount = iticount.loc[ iticount['N_j'] > 0 ]
-        
-        return iticount['anccityid2'].unique()
+
+        return iticount['id_city2'].unique()
 
 
     def filter_positive_activity(self):
         """
-        Keeps rows in iticount data where importing (anccityid1) and exporting
-        (anccityid2) cities import or export at least once.
+        Keeps rows in iticount data where importing (id_city1) and exporting
+        (id_city2) cities import or export at least once.
 
         Returns 1-dim np.array with id's of participating cities.
         """
         # Add N_ij and N_ji for all i, j.
-        iticount = self.df_iticount.sort_values(['anccityid2', 'anccityid1'])
-        iticount_reversed = iticount.sort_values(['anccityid1', 'anccityid2'])
-        iticount['iticount'] = (iticount['iticount'].values
-                                + iticount_reversed['iticount'].values
+        iticount = self.df_iticount.sort_values(['id_city2', 'id_city1'])
+        iticount_reversed = iticount.sort_values(['id_city1', 'id_city2'])
+        iticount['iti_joint'] = (iticount['iti_joint'].values
+                                + iticount_reversed['iti_joint'].values
                                )
 
         # Get N_j
-        N_j = (iticount.groupby('anccityid2')
-                       .sum()['iticount']
+        N_j = (iticount.groupby('id_city2')
+                       .sum()['iti_joint']
                        .rename('N_j')
               )
 
         # Add this info keep obs with positive aggregate imports
-        iticount = iticount.join(N_j, on='anccityid2')
-        
+        iticount = iticount.join(N_j, on='id_city2')
+
         iticount = iticount.loc[ iticount['N_j'] > 0 ]
-        
-        return iticount['anccityid2'].unique()
+
+        return iticount['id_city2'].unique()
 
 
     def convert_id(self, ids_left):
@@ -198,11 +198,11 @@ class Process(object):
         df['id_jhwi'] = df.index + 1
         df['id_old'] = df['id_old'].astype(int)
         df = df[['city_name', 'id_old', 'id_jhwi']].sort_values('id_old')
-        
+
         df = df.merge(self.fetch_df_id()[['id', 'city_name']],
                       how='left',
                       on='city_name')
-        
+
         cols = [ 'city_name',
                  'id_old',
                  'id_jhwi',
@@ -227,13 +227,13 @@ class Process(object):
         """
         df_id = self.fetch_df_id_equiv()
         df_id = df_id[['id_old', 'id_jhwi', 'id']]
-        
+
         iticount = self.df_iticount.copy()
         d = {'i': '1', 'j': '2'}
         for status in d.keys():
             iticount = iticount.merge(df_id,
                                       how='right',
-                                      left_on='anccityid'+d[status],
+                                      left_on='id_city'+d[status],
                                       right_on='id_old')
             iticount = iticount.rename(columns = {'id_old': 'id_old_'+status,
                                                   'id_jhwi': 'id_jhwi_'+status,
@@ -257,7 +257,7 @@ class Process(object):
         analysis. The dataset level is ordered city-pairs.
         """
         # Rename variables
-        df = df.rename(columns = {'iticount': 'N_ij',
+        df = df.rename(columns = {'iti_joint': 'N_ij',
                                   'certainty1': 'cert_i',
                                   'certainty2': 'cert_j'}
                       )
@@ -289,7 +289,7 @@ class Process(object):
         # Add N_ij and N_ji for all i, j.
         df = df.sort_values(['id_j', 'id_i'])
         df_reversed = df.sort_values(['id_i', 'id_j'])
-        df['iticount'] = df['iticount'].values + df_reversed['iticount'].values
+        df['iti_joint'] = df['iti_joint'].values + df_reversed['iti_joint'].values
 
         # From this point on, the procedure equals that of the directional.
         return self.build_vars_directional(df)
@@ -333,11 +333,13 @@ class Process(object):
 
         coordinates = self.df_coordinates.drop('id', axis=1)
         coordinates = coordinates.merge(df_id,
-                                        how='left',
+                                        how='right',
                                         left_on='name',
                                         right_on='city_name'
                                        )
-        coordinates = coordinates.loc[ pd.notnull(coordinates['id']) ]
+        #print(coordinates)
+        #coordinates = coordinates.loc[ pd.notnull(coordinates['id']) ]
+        #print(coordinates)
 
         # Add id_jhwi for testing
         coordinates = coordinates[['id',
@@ -405,3 +407,26 @@ class Process(object):
                                               + 'stat.csv', index=False)
         self.fetch_df_constr('dynamic').to_csv(self.constr_path
                                                + 'dyn.csv', index=False)
+
+
+## Test all data except iticount is the same.
+#
+#p = Process('directional')
+#m_i = p.df_iticount['id_city1'] == 20
+#m_e = p.df_iticount['id_city2'] == 20
+#df_id_equiv = p.fetch_df_id_equiv()
+#df_id = p.fetch_df_id()
+#df_iticount = p.fetch_df_iticount()
+#df_coordinates = p.fetch_df_coordinates()
+#coords = p.fetch_df_coordinates()
+#for d in ['id',
+#          'constraints_dir_dyn',
+#          'constraints_dir_stat',
+#          'constraints_nondir_dyn',
+#          'constraints_nondir_stat']:
+#    #      'coordinates_dir',
+#    #      'coordinates_nondir']:
+#    p_new = pd.read_csv(d + '.csv')
+#    p_old = pd.read_csv('../../process_old/ancient/' + d + '.csv')
+#
+#    pd.testing.assert_frame_equal(p_new, p_old)
