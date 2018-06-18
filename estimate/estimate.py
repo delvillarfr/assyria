@@ -3,7 +3,6 @@
 This module provides all functions to estimate the model parameters.
 """
 
-import os
 import ConfigParser
 
 
@@ -24,7 +23,7 @@ import sys
 config = ConfigParser.ConfigParser()
 
 ## file keys.ini should be in process.py parent directory.
-config.read(os.path.dirname(os.path.dirname(__file__)) + '/keys.ini')
+config.read('../keys.ini')
 
 
 
@@ -225,10 +224,14 @@ class LoaderNew(object):
         """
         # Keep only relevant vars
         c = coords[['id', 'id_shuff', 'cert']]
-        constraint = pd.merge(constraint,
-                              c,
-                              how = 'left',
-                              on = 'id')
+        constraint = c.merge(constraint,
+                             how = 'left',
+                             on = 'id')
+
+        #constraint = pd.merge(constraint,
+        #                      c,
+        #                      how = 'left',
+        #                      on = 'id')
         constraint = (constraint.loc[constraint['cert'] == 3]
                                 .sort_values('id_shuff'))
         return constraint
@@ -870,6 +873,49 @@ class EstimateBase(object):
         return np.linalg.multi_dot((j, var, np.transpose(j)))
 
 
+    def get_size_variance2(self,
+                           varlist,
+                           cov,
+                           zeta_fixed=False):
+        """ Get the fundamental size variance-covariance matrix.
+
+        Applies Delta Method to get the variance-covariance matrix of the city
+        size estimates.
+
+        Returns:
+            np.ndarray: The variance-covariance matrix of city sizes.
+        """
+        def size_for_grad(v):
+            """ get_size function for autograd """
+            return self.get_size(v)
+
+        # Get Jacobian
+        jac_size = jacobian(size_for_grad)
+        # Evaluate
+        j = jac_size(varlist)
+
+        # Remove variables that are fixed
+        i = self.div_indices[True]
+        j = pd.DataFrame(j)
+        j = j.drop(columns = ([1]
+                       + range(i['long_s'], i['long_unknown_s'])
+                       + range(i['lat_s'], i['lat_unknown_s'])))
+        j = j.values
+        # Remove fixed a
+        index_norm = self.div_indices[False]['a_s'] + self.id_normalized
+        j = np.delete(j, index_norm, axis=1)
+
+        # If zeta is fixed, remove it.
+        if zeta_fixed:
+            j = np.delete(j, 0, axis=1)
+
+        print(j)
+        print(cov)
+        print('--------------------')
+
+        return np.linalg.multi_dot((j, cov, np.transpose(j)))
+
+
     def export_results(self,
                        varlist,
                        zeta_fixed = False,
@@ -910,7 +956,6 @@ class EstimateBase(object):
                                                zeta_fixed = zeta_fixed,
                                                var_type='homo')
         print(varlist_cov_white.shape)
-        pd.DataFrame(varlist_cov_homo).to_csv('~/Desktop/w.csv', index=False)
 
         print(np.prod(np.diag(varlist_cov_white) > 0.0))
         print(np.prod(np.diag(varlist_cov_homo) > 0.0))
@@ -1140,12 +1185,14 @@ class EstimateAncient(EstimateBase):
                  lat_estimated = None,
                  cities_to_drop = [],
                  cities_to_known = [],
+                 cities_to_unknown = [],
                  omega = None):
         EstimateBase.__init__(self, build_type, omega = omega)
         self.lat = lat
         self.lng = lng
         self.cities_to_drop = cities_to_drop
         self.cities_to_known = cities_to_known
+        self.cities_to_unknown = cities_to_unknown
 
         ## Paths
         root = config.get('paths', 'root')
@@ -1214,6 +1261,11 @@ class EstimateAncient(EstimateBase):
             self.df_coordinates.loc[self.df_coordinates['id'] == c, 'cert'] = 2
             self.df_iticount.loc[self.df_iticount['id_i'] == c, 'cert_i'] = 2
             self.df_iticount.loc[self.df_iticount['id_j'] == c, 'cert_j'] = 2
+
+        for c in cities_to_unknown:
+            self.df_coordinates.loc[self.df_coordinates['id'] == c, 'cert'] = 3
+            self.df_iticount.loc[self.df_iticount['id_i'] == c, 'cert_i'] = 3
+            self.df_iticount.loc[self.df_iticount['id_j'] == c, 'cert_j'] = 3
 
         # Reindex datasets
         if rand_lost_cities is not None:
@@ -1375,8 +1427,8 @@ class EstimateAncient(EstimateBase):
         # Build specs: Ursu does not participate if directional, Kanes is in 
         # second position in coordinates dataframe if directional, third
         # otherwise.
-        if self.build_type == 'directional':
-            constr = constr[constr['id'] != 'ur01']
+        #if self.build_type == 'directional':
+        #    constr = constr[constr['id'] != 'ur01']
 
         if full_vars:
             num_vars = 2 + 3*self.num_cities
@@ -1386,6 +1438,8 @@ class EstimateAncient(EstimateBase):
         lb = num_vars * [-1.0e20]
         ub = num_vars * [1.0e20]
 
+        print(len(lb), len(ub))
+
         if set_elasticity != None:
             lb[0] = set_elasticity
             ub[0] = set_elasticity
@@ -1393,6 +1447,7 @@ class EstimateAncient(EstimateBase):
             # zeta should be larger than zero
             lb[0] = 0.0
 
+        print(len(lb), len(ub))
         i = self.div_indices[full_vars]
         dit = {'long':('varphi', 'long_x'), 'lat': ('lambda', 'lat_y')}
 
@@ -1409,6 +1464,10 @@ class EstimateAncient(EstimateBase):
         else:
             for c in dit.keys():
                 # Unknown location constraints
+                print(lb[i[c+'_s']: i[c+'_e']])
+                print(constr['lb_'+dit[c][0]].tolist())
+                assert len(lb[i[c+'_s']: i[c+'_e']]) == len(constr['lb_'+dit[c][0]].tolist())
+                assert len(ub[i[c+'_s']: i[c+'_e']]) == len(constr['ub_'+dit[c][0]].tolist())
                 lb[i[c+'_s']: i[c+'_e']] = constr['lb_'+dit[c][0]].tolist()
                 ub[i[c+'_s']: i[c+'_e']] = constr['ub_'+dit[c][0]].tolist()
         lb[i['a_s']:] = self.num_cities * [0.0]
@@ -1452,9 +1511,10 @@ class EstimateAncient(EstimateBase):
               constraint_type = 'static',
               max_iter = 25000,
               full_vars = False,
-              solver='ma57',
-              set_elasticity=None,
-              no_constr=False):
+              solver = 'ma57',
+              set_elasticity = None,
+              no_constr = False,
+              scale = None):
         """ Solve the sum of squared distances minimization problem with IPOPT.
 
         Args:
@@ -1467,6 +1527,8 @@ class EstimateAncient(EstimateBase):
         Returns:
             A one-row dataframe with optimization information.
         """
+        print('scale:')
+        print(scale)
         # Cast x0 as np.float64. See numpy bug in `self.haversine_approx`.
         x0 = np.float64(x0)
 
@@ -1482,23 +1544,26 @@ class EstimateAncient(EstimateBase):
                              + "'static' or 'dynamic'")
         bounds = self.get_bounds(constr, full_vars, set_elasticity)
 
-        #print('Low bound:')
-        #print(bounds[0])
-        #print(len(bounds[0]))
-        #print('High bound:')
-        #print(bounds[1])
-        #print(len(bounds[1]))
+        print('Low bound:')
+        print(bounds[0])
+        print(len(bounds[0]))
+        print('High bound:')
+        print(bounds[1])
+        print(len(bounds[1]))
         #print('max_iter:' + str(max_iter))
         assert len(bounds[0]) == len(x0)
         assert len(bounds[1]) == len(x0)
 
         nlp = ipopt.problem( n=len(x0),
                              m=0,
-                             problem_obj=OptimizerAncient(build_type = self.build_type,
-                                                          omega = self.omega,
-                                                          cities_to_known = self.cities_to_known,
-                                                          cities_to_drop = self.cities_to_drop,
-                                                          full_vars = full_vars),
+                             problem_obj=OptimizerAncient(
+                                 build_type = self.build_type,
+                                 omega = self.omega,
+                                 cities_to_known = self.cities_to_known,
+                                 cities_to_unknown = self.cities_to_unknown,
+                                 cities_to_drop = self.cities_to_drop,
+                                 full_vars = full_vars,
+                                 scale = scale),
                              lb=bounds[0],
                              ub=bounds[1] )
 
@@ -1551,7 +1616,8 @@ class EstimateAncient(EstimateBase):
                  full_vars = False,
                  set_elasticity=None,
                  no_constr=False,
-                 solver = 'ma57'):
+                 solver = 'ma57',
+                 scale = None):
         """ Run `self.solve` for many initial values.
 
         This function is the one called when running estimation in parallel.
@@ -1567,21 +1633,28 @@ class EstimateAncient(EstimateBase):
         Warning:
             Make sure `full_vars` is consistent with `x0`.
         """
+        print('Unknown Cities:')
+        print(np.unique(self.df_unknown))
+
+        print('Known Cities:')
+        print(np.unique(self.df_known))
+
         data = self.solve( x0[0, :],
                            max_iter=max_iter,
                            full_vars=full_vars,
                            set_elasticity=set_elasticity,
                            no_constr=no_constr,
-                           solver = solver)
+                           solver = solver,
+                           scale = scale)
         len_sim = x0.shape[0]
         for i in range(1, len_sim):
-            i_val = x0[i, :]
-            data = data.append( self.solve(i_val,
+            data = data.append( self.solve(x0[i, :],
                                            max_iter = max_iter,
                                            full_vars = full_vars,
                                            set_elasticity = set_elasticity,
                                            no_constr = no_constr,
-                                           solver = solver) )
+                                           solver = solver,
+                                           scale = scale) )
 
         if rank != None:
             data['process'] = rank
@@ -2911,32 +2984,42 @@ class OptimizerAncient(EstimateAncient):
                  build_type,
                  omega = None,
                  cities_to_known = [],
+                 cities_to_unknown = [],
                  cities_to_drop = [],
-                 full_vars = False):
+                 full_vars = False,
+                 scale = None):
         EstimateAncient.__init__(self,
                                  build_type,
                                  omega = omega,
                                  cities_to_known = cities_to_known,
+                                 cities_to_unknown = cities_to_unknown,
                                  cities_to_drop = cities_to_drop)
         self.full_vars = full_vars
+
+        if scale is None:
+            self.scale = 1.0
+        else:
+            self.scale = scale
 
         # Set objective and gradient depending on whether we have an omega.
         if omega is None:
             def obj_fn(varlist):
-                return self.sqerr_sum(varlist, full_vars = self.full_vars)
+                return self.sqerr_sum(varlist / self.scale,
+                                      full_vars = self.full_vars)
             ## Grad here depends on whether full_vars is on or off.
-            if self.full_vars:
-                self.grad_fn = self.grad_full_vars
-            else:
-                self.grad_fn = self.grad
+            #if self.full_vars:
+            #    self.grad_fn = self.grad_full_vars
+            #else:
+            #    self.grad_fn = self.grad
         else:
             def obj_fn(varlist):
-                return self.sqerr_sum_gen(varlist,
+                return self.sqerr_sum_gen(varlist / self.scale,
                                           self.omega_inv,
                                           full_vars = self.full_vars)
-            self.grad_fn = self.grad_gen
+            #self.grad_fn = self.grad_gen
 
         self.obj_fn = obj_fn
+        self.grad_fn = grad(self.obj_fn)
 
 
     def objective(self, varlist):
