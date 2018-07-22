@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """ Parameter Estimation
 
 This module provides all functions to estimate the model parameters.
@@ -1699,97 +1701,181 @@ class EstimateAncient(EstimateBase):
 
 
 
-class EstimateAncientNoQattara(EstimateAncient):
+class EstimateToblerWeinburg(EstimateAncient):
+    """ Class for estimation procedures à la Tobler and Weinburg (1971).
+    """
 
     def __init__(self,
-                 build_type,
+                 build_type = 'non_directional',
                  lat = (36, 42),
                  lng = (27, 45),
+                 rand_lost_cities = None,
                  lng_estimated = None,
-                 lat_estimated = None):
+                 lat_estimated = None,
+                 cities_to_drop = [],
+                 cities_to_known = [],
+                 cities_to_unknown = [],
+                 omega = None):
         EstimateAncient.__init__(self,
                                  build_type,
                                  lat,
                                  lng,
-                                 lng_estimated,
-                                 lat_estimated)
-        # Drop Qattara
-        self.df_coordinates = self.df_coordinates.loc[
-                self.df_coordinates['id'] != 'qa01',
-                : ]
-        self.df_iticount = self.df_iticount.loc[
-                (self.df_iticount['id_i'] != 'qa01')
-                & (self.df_iticount['id_j'] != 'qa01'),
-                : ]
-        ## Reindex
-        self.df_coordinates = self.df_coordinates.reset_index(drop = True)
-        self.df_iticount = self.df_iticount.reset_index(drop = True)
+                                 rand_lost_cities = rand_lost_cities,
+                                 lng_estimated = lng_estimated,
+                                 lat_estimated = lat_estimated,
+                                 cities_to_drop = cities_to_drop,
+                                 cities_to_known = cities_to_known,
+                                 cities_to_unknown = cities_to_unknown,
+                                 omega = omega)
 
-        # Save number of cities
-        self.num_cities = len(self.df_coordinates)
+        # Add inverted gravity term
+        self.df_iticount['inv_grav'] = (
+                self.df_iticount['N_i'] * self.df_iticount['N_j']
+                / self.df_iticount['N_ij']
+                )
 
-        self.id_normalized = int(
-                self.df_coordinates.loc[self.df_coordinates['id'] == 'ka01',
-                                        'id_jhwi'].values[0]
-                ) - 1
+        # Save this to speed up objective
+        self.inv_grav = self.df_iticount['inv_grav'].values
+        self.inv_grav = self.inv_grav[self.df_iticount['N_ij'] != 0]
 
-        # Known cities
-        self.df_known = self.df_coordinates.loc[
-            self.df_coordinates['cert'] < 3,
-            ['id', 'long_x', 'lat_y']
-        ]
-        # Lost cities
-        self.df_unknown = self.df_coordinates.loc[
-                self.df_coordinates['cert'] == 3,
-            ['id', 'long_x', 'lat_y']
-        ]
-
-        self.num_cities_known = len(self.df_known)
-        self.num_cities_unknown = len(self.df_unknown)
 
         # Automatic differentiation of objective and errors
 
         ## Objective
-        ### Using all vars
-        def objective_full_vars(varlist):
+        def objective(varlist):
             """ This is the formulation for autograd. """
-            return self.sqerr_sum(varlist, full_vars=True)
-        self.grad_full_vars = grad(objective_full_vars)
+            return self.sqerr_sum(varlist)
+        self.grad = grad(objective)
 
         ## Errors
         ### Using all vars
-        def error_autograd_full_vars(v):
-            return self.get_errors(v, full_vars=True)
-        self.jac_errors_full_vars = jacobian(error_autograd_full_vars)
+        def error_autograd(v):
+            return self.get_errors(v)
+        self.jac_errors = jacobian(error_autograd)
 
-        # Save indices to unpack argument of objective and gradient
-        # There is a set of indices if we are using the full set of coordinates
-        # as arguments, or if we use only the only the unknown cities
-        # coordinates as arguments.
-        self.div_indices = {
-            True: {'long_unknown_s': 2 + self.num_cities_known,
-                   'long_s': 2,
-                   'long_e': 2 + self.num_cities,
-                   'lat_unknown_s': 2 + self.num_cities + self.num_cities_known,
-                   'lat_s': 2 + self.num_cities,
-                   'lat_e': 2 + 2*self.num_cities,
-                   'a_s': 2 + 2*self.num_cities,
-                   'a_e': 2 + 3*self.num_cities},
-            False: {'long_s': 1,
-                    'long_e': 1 + self.num_cities_unknown,
-                    'lat_s': 1 + self.num_cities_unknown,
-                    'lat_e': 1 + 2*self.num_cities_unknown,
-                    'a_s': 1 + 2*self.num_cities_unknown,
-                    'a_e': 1 + 2*self.num_cities_unknown + self.num_cities}
-        }
 
-        # Save array index that views array of size len(self.df_coordinates)
-        # and selects off-diagonal elements. See self.tile_nodiag.
-        i = np.repeat(np.arange(1, self.num_cities), self.num_cities)
-        self.index_nodiag = i + np.arange(self.num_cities*(self.num_cities - 1))
+    def get_bounds(self, constr):
+        """ Fetch the upper and lower bounds for all entries in `varlist`.
 
-        # Save trade shares (to speed up self.get_errors)
-        self.shares = self.df_iticount['s_ij'].values
+        Args:
+            constr (DataFrame): Specifies upper and lower bounds for
+                coordinates of cities.
+            set_elasticity (float): An imposed distance elasticity of trade.
+                Optional.
+
+        Returns:
+            tuple: (lb, ub), where lb and ub are of type `list` for the bounds.
+        """
+        num_vars = 1 + 2*self.num_cities_unknown
+
+        lb = num_vars * [-1.0e20]
+        ub = num_vars * [1.0e20]
+
+        print(len(lb), len(ub))
+
+        i = self.div_indices[False]
+        dit = {'long':('varphi', 'long_x'), 'lat': ('lambda', 'lat_y')}
+
+        for c in dit.keys():
+            # Unknown location constraints
+            print(lb[i[c+'_s']: i[c+'_e']])
+            print(constr['lb_'+dit[c][0]].tolist())
+            assert len(lb[i[c+'_s']: i[c+'_e']]) == len(constr['lb_'+dit[c][0]].tolist())
+            assert len(ub[i[c+'_s']: i[c+'_e']]) == len(constr['ub_'+dit[c][0]].tolist())
+            lb[i[c+'_s']: i[c+'_e']] = constr['lb_'+dit[c][0]].tolist()
+            ub[i[c+'_s']: i[c+'_e']] = constr['ub_'+dit[c][0]].tolist()
+
+        return (lb, ub)
+
+
+    def initial_cond_uniform(self, len_sim=None):
+        """ Gets uniform draws of initial condition(s) for `IPOPT`.
+
+        Returns:
+            np.ndarray: An array with `len_sim` perturbed initial
+                conditions.
+        """
+        # Specify lower and upper bounds for every variable (full_vars = False)
+        lower_bound = ( [0]
+                        + self.num_cities_unknown * [self.lng[0]]
+                        + self.num_cities_unknown * [self.lat[0]]
+                      )
+        upper_bound =  ( [15]
+                        + self.num_cities_unknown * [self.lng[1]]
+                        + self.num_cities_unknown * [self.lat[1]]
+                      )
+        n_params = 1 + 2*self.num_cities_unknown
+
+        return np.random.uniform(lower_bound,
+                                 upper_bound,
+                                 size=(len_sim, n_params))
+
+
+    def initial_cond(self,
+                     suggestion,
+                     len_sim=None,
+                     perturb=None,
+                     perturb_type='rigid'):
+        """ Gets initial condition(s) for `IPOPT`.
+
+        Args:
+            len_sim (int): Specifies the number of initial conditions to draw.
+            perturb (float): A percentage deviation from the default initial
+                value given in `self.df_coordinates`.
+            perturb_type (str): Type of perturbation on the default initial
+                value. If `'rigid'` then the whole initial value vector is
+                multiplied by a scalar. If `'flexible'` then each element of
+                the initial value vector is multiplied by a different scalar.
+                Default is `'rigid'`.
+            suggestion (np.ndarray): A custom initial value. It must be
+                coherent with `full_vars`.
+
+        Returns:
+            np.ndarray: The default initial condition if perturb is not
+                specified, and an array with `len_sim` perturbed initial
+                conditions.
+        """
+        x0 = suggestion
+
+        # Perturb it
+        if perturb != None:
+            x0 = np.tile(x0, (len_sim, 1))
+
+            if perturb_type == 'rigid':
+                p = np.random.uniform(1-perturb, 1+perturb, size=(len_sim, 1))
+            elif perturb_type == 'flexible':
+                p = np.random.uniform(1-perturb,
+                                      1+perturb,
+                                      size=(len_sim, x0.shape[1]))
+            #print(p)
+            x0 = x0*p
+
+        return x0
+
+
+    def get_errors(self, varlist, full_vars):
+        """ Get the model and data difference in the gravity equation.
+
+        Args:
+            varlist (np.ndarray): it is composed of
+                `[alpha_inv, lng_guess, lat_guess]`.
+
+        Returns:
+            np.ndarray: the Tobler-Weinburg errors.
+        """
+        # Unpack arguments
+        alpha_inv = varlist[0]
+
+        i = self.div_indices[full_vars]
+        lng_guess = varlist[i['long_s']: i['long_e']]
+        lat_guess = varlist[i['lat_s']: i['lat_e']]
+
+        assert len(lat_guess) == len(lng_guess)
+
+        distances = self.fetch_dist(lat_guess, lng_guess, full_vars)
+        distances = distances[self.df_iticount['N_ij'] != 0]
+
+        return self.inv_grav - alpha_inv * (distances ** 2)
 
 
     def solve(self,
@@ -1797,9 +1883,10 @@ class EstimateAncientNoQattara(EstimateAncient):
               constraint_type = 'static',
               max_iter = 25000,
               full_vars = False,
-              solver='ma57',
-              set_elasticity=None,
-              no_constr=False):
+              solver = 'ma57',
+              set_elasticity = None,
+              no_constr = False,
+              scale = None):
         """ Solve the sum of squared distances minimization problem with IPOPT.
 
         Args:
@@ -1825,26 +1912,33 @@ class EstimateAncientNoQattara(EstimateAncient):
         else:
             raise ValueError("Please specify the constraint type to be "
                              + "'static' or 'dynamic'")
-        bounds = self.get_bounds(constr, full_vars, set_elasticity)
 
+        bounds = self.get_bounds(constr)
+
+        print('Low bound:')
+        print(bounds[0])
+        print(len(bounds[0]))
+        print('High bound:')
+        print(bounds[1])
+        print(len(bounds[1]))
+        #print('max_iter:' + str(max_iter))
         assert len(bounds[0]) == len(x0)
         assert len(bounds[1]) == len(x0)
-        #print(x0)
-        #print(len(x0))
-        #print('Low bound:')
-        #print(bounds[0])
-        #print('High bound:')
-        #print(bounds[1])
 
         nlp = ipopt.problem( n=len(x0),
                              m=0,
-                             problem_obj=OptimizerAncientNoQattara(build_type=self.build_type,
-                                                                   full_vars=full_vars),
+                             problem_obj=OptimizerToblerWeinburg(
+                                 omega = self.omega,
+                                 cities_to_known = self.cities_to_known,
+                                 cities_to_unknown = self.cities_to_unknown,
+                                 cities_to_drop = self.cities_to_drop),
                              lb=bounds[0],
                              ub=bounds[1] )
 
+
         # Add IPOPT options (some jhwi options were default)
         option_specs = { 'hessian_approximation': 'limited-memory',
+                         'print_frequency_iter': 5,
                          'linear_solver': solver,
                          'limited_memory_max_history': 100,
                          'limited_memory_max_skipping': 1,
@@ -1859,18 +1953,11 @@ class EstimateAncientNoQattara(EstimateAncient):
         (x, info) = nlp.solve(x0)
 
         # Set up variable names
-        alphas = ['{0}_a'.format(i) for i in self.df_coordinates['id'].tolist()]
-        if full_vars:
-            longs = ['{0}_lng'.format(i) for i in self.df_coordinates['id'].tolist()]
-            lats = ['{0}_lat'.format(i) for i in self.df_coordinates['id'].tolist()]
-            headers = ['zeta', 'useless'] + longs + lats + alphas
-        else:
-            longs = ['{0}_lng'.format(i) for i in self.df_unknown['id'].tolist()]
-            lats = ['{0}_lat'.format(i) for i in self.df_unknown['id'].tolist()]
-            headers = ['zeta'] + longs + lats + alphas
+        longs = ['{0}_lng'.format(i) for i in self.df_unknown['id'].tolist()]
+        lats = ['{0}_lat'.format(i) for i in self.df_unknown['id'].tolist()]
+        headers = ['alpha_inv'] + longs + lats
 
-        df = pd.DataFrame(data = [x],
-                          columns = headers)
+        df = pd.DataFrame(data = [x], columns = headers)
         df['obj_val'] = info['obj_val']
         df['status'] = info['status']
         df['status_msg'] = info['status_msg']
@@ -1881,6 +1968,81 @@ class EstimateAncientNoQattara(EstimateAncient):
             df['x0_'+str(ival)] = x0[ival]
 
         return df
+
+
+    def get_jacobian(self,
+                     varlist,
+                     var_type='white',
+                     zeta_fixed=False):
+        """ Compute the variance-covariance matrix of the estimators.
+
+        It can be computed according to the White formula, or with
+        homoskedasticity.
+
+        Args:
+            var_type (str): One of 'white' or 'homo', or 'gmm'.
+
+        Returns:
+            np.ndarray: The variance-covariance matrix of the estimators.
+        """
+        # Evaluate errors jacobian at estimated parameter.
+        jac = self.jac_errors(varlist)
+
+        # If zeta (i.e. alpha_inv) is fixed, remove it.
+        if zeta_fixed:
+            jac = np.delete(jac, 0, axis=1)
+
+        return jac
+
+
+    def get_variance(self,
+                     varlist,
+                     var_type='white',
+                     zeta_fixed=False):
+        """ Compute the variance-covariance matrix of the estimators.
+
+        It can be computed according to the White formula, or with
+        homoskedasticity.
+
+        Args:
+            var_type (str): One of 'white' or 'homo', or 'gmm'.
+
+        Returns:
+            np.ndarray: The variance-covariance matrix of the estimators.
+        """
+        # Evaluate errors jacobian at estimated parameter.
+        jac = self.jac_errors(varlist)
+
+        # If zeta is fixed, remove it.
+        if zeta_fixed:
+            jac = np.delete(jac, 0, axis=1)
+
+        errors = self.get_errors(varlist, full_vars = False)
+
+        # Build variance-covariance matrix, according to var_type
+        scale = 1.0
+        bread = np.linalg.inv(scale * np.dot( np.transpose(jac), jac ))
+        if var_type == 'gmm':
+            #middle = np.matmul(scale*np.expand_dims(errors, 1),
+            #                   scale*np.expand_dims(errors, 0))
+            middle = np.outer(scale*errors, scale*errors)
+            ham = np.linalg.multi_dot((np.transpose(jac), middle, jac))
+            return np.linalg.multi_dot((bread, ham, bread))
+
+        elif var_type == 'white':
+            middle = np.diag((scale*errors)**2)
+            ham = np.linalg.multi_dot((np.transpose(jac), middle, jac))
+            ## Make column vector to multiply row-wise
+            #errors = np.expand_dims(errors, 1)
+            #ham = np.dot(np.transpose(jac * errors), jac * errors)
+            return np.linalg.multi_dot((bread, ham, bread))
+
+        elif var_type == 'homo':
+            return scale * (np.sum(errors**2) / len(errors)) * bread
+
+        else:
+            raise ValueError("Please specify the variance type to be one of "
+                    + "'white' or 'homo'")
 
 
 
@@ -3032,21 +3194,34 @@ class OptimizerAncient(EstimateAncient):
 
 
 
-class OptimizerAncientNoQattara(EstimateAncientNoQattara):
+class OptimizerToblerWeinburg(EstimateToblerWeinburg):
 
-    def __init__(self, build_type, full_vars):
-        EstimateAncientNoQattara.__init__(self, build_type)
-        self.full_vars = full_vars
+    def __init__(self,
+                 build_type = 'non_directional',
+                 omega = None,
+                 cities_to_known = [],
+                 cities_to_unknown = [],
+                 cities_to_drop = []):
+        EstimateToblerWeinburg.__init__(self,
+                                 build_type = build_type,
+                                 omega = omega,
+                                 cities_to_known = cities_to_known,
+                                 cities_to_unknown = cities_to_unknown,
+                                 cities_to_drop = cities_to_drop)
+
+        def obj_fn(varlist):
+            return self.sqerr_sum(varlist)
+
+        self.obj_fn = obj_fn
+        self.grad_fn = grad(self.obj_fn)
+
 
     def objective(self, varlist):
-        return self.sqerr_sum(varlist, full_vars = self.full_vars)
+        return self.obj_fn(varlist)
+
 
     def gradient(self, varlist):
-        #print(varlist)
-        if self.full_vars:
-            return self.grad_full_vars(varlist)
-        else:
-            return self.grad(varlist)
+        return self.grad_fn(varlist)
 
 
 
