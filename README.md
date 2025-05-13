@@ -1,5 +1,7 @@
 # assyria
 
+Paper: https://academic.oup.com/qje/article-abstract/134/3/1455/5420484
+
 You should have a similar directory structure:
 
      jhwi/
